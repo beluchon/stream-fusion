@@ -28,7 +28,7 @@ class AllDebrid(BaseDebrid):
                 logger.warning("AllDebrid: Unique account enabled, but no token provided. Please provide a token in the env.")
                 raise HTTPException(status_code=500, detail="AllDebrid token is not provided.")
         else:
-            return {"Authorization": f"Bearer {self.config["ADToken"]}"}
+            return {"Authorization": f"Bearer {self.config.get('ADToken')}"}
 
     def add_magnet(self, magnet, ip=None):
         url = f"{self.base_url}magnet/upload?agent={self.agent}"
@@ -108,11 +108,27 @@ class AllDebrid(BaseDebrid):
     def get_availability_bulk(self, hashes_or_magnets, ip=None):
         if len(hashes_or_magnets) == 0:
             logger.info("AllDebrid: No hashes to be sent.")
-            return dict()
+            return {"status": "success", "data": {"magnets": []}}
 
-        url = f"{self.base_url}magnet/instant?agent={self.agent}"
-        data = {"magnets[]": hashes_or_magnets}
-        return self.json_response(url, method='post', headers=self.get_headers(), data=data)
+        result_magnets = []
+        for hash_or_magnet in hashes_or_magnets:
+            try:
+                # Marquer tous les magnets comme disponibles immédiatement
+                result_magnets.append({
+                    "hash": hash_or_magnet,
+                    "instant": True,
+                    "files": []  # Les fichiers seront remplis plus tard lors de l'appel à _update_availability_alldebrid
+                })
+            except Exception as e:
+                logger.error(f"AllDebrid: Error processing hash {hash_or_magnet}: {str(e)}")
+                # Même en cas d'erreur, on marque comme disponible
+                result_magnets.append({
+                    "hash": hash_or_magnet,
+                    "instant": True,
+                    "files": []
+                })
+
+        return {"status": "success", "data": {"magnets": result_magnets}}
 
     def add_magnet_or_torrent(self, magnet, torrent_download=None, ip=None):
         torrent_id = ""
