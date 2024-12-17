@@ -34,5 +34,5 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/limedrive/stream-fusion:latest
-            ghcr.io/limedrive/stream-fusion:${{ github.event.release.tag_name }}
+            ghcr.io/telkaoss/stream-fusion:latest
+            ghcr.io/telkaoss/stream-fusion:${{ github.event.release.tag_name }}
