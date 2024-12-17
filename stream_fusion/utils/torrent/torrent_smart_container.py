@@ -254,24 +254,29 @@ class TorrentSmartContainer:
 
     def _update_availability_alldebrid(self, response, media):
         self.logger.info("TorrentSmartContainer: Updating availability for AllDebrid")
-        if response == {}:
-            self.logger.error("TorrentSmartContainer: AllDebrid response is empty")
-            return
-        if response["status"] != "success":
+        if not response["status"] == "success":
             self.logger.error(f"TorrentSmartContainer: AllDebrid API error: {response}")
             return
+
         for data in response["data"]["magnets"]:
-            if not data["instant"]:
-                self.logger.debug(
-                    f"TorrentSmartContainer: Skipping non-instant magnet: {data['hash']}"
-                )
-                continue
             torrent_item: TorrentItem = self.__itemsDict[data["hash"]]
-            files = []
-            self._explore_folders_alldebrid(
-                data["files"], files, 1, torrent_item.type, media
-            )
-            self._update_file_details(torrent_item, files, debrid="AD")
+            
+            # Set availability to AD immediately for all files
+            torrent_item.availability = "AD"
+            
+            # Process files if they exist
+            if "files" in data and data["files"]:
+                files = []
+                self._explore_folders_alldebrid(
+                    data["files"], files, 1, torrent_item.type, media
+                )
+                if files:  # If we found matching files
+                    self._update_file_details(torrent_item, files, debrid="AD")
+            else:
+                # If no files data, still mark as available
+                self.logger.debug(f"No files data for hash {data['hash']}, but marking as available")
+                torrent_item.availability = "AD"
+                
         self.logger.info(
             "TorrentSmartContainer: AllDebrid availability update completed"
         )
