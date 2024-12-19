@@ -252,23 +252,27 @@ function updateDebridOrderList() {
     const rdEnabled = document.getElementById('debrid_rd').checked || document.getElementById('debrid_rd').disabled;
     const adEnabled = document.getElementById('debrid_ad').checked || document.getElementById('debrid_ad').disabled;
     const tbEnabled = document.getElementById('debrid_tb').checked || document.getElementById('debrid_tb').disabled;
+    const pmEnabled = document.getElementById('debrid_pm').checked || document.getElementById('debrid_pm').disabled;
 
     if (debridOrder.length === 0 ||
         !debridOrder.every(service =>
             (service === 'Real-Debrid' && rdEnabled) ||
             (service === 'AllDebrid' && adEnabled) ||
-            (service === 'TorBox' && tbEnabled)
+            (service === 'TorBox' && tbEnabled) ||
+            (service === 'Premiumize' && pmEnabled)
         )) {
         debridOrder = [];
         if (rdEnabled) debridOrder.push('Real-Debrid');
         if (adEnabled) debridOrder.push('AllDebrid');
         if (tbEnabled) debridOrder.push('TorBox');
+        if (pmEnabled) debridOrder.push('Premiumize');
     }
 
     debridOrder.forEach(serviceName => {
         if ((serviceName === 'Real-Debrid' && rdEnabled) ||
             (serviceName === 'AllDebrid' && adEnabled) ||
-            (serviceName === 'TorBox' && tbEnabled)) {
+            (serviceName === 'TorBox' && tbEnabled) ||
+            (serviceName === 'Premiumize' && pmEnabled)) {
             addDebridToList(serviceName);
         }
     });
@@ -282,6 +286,9 @@ function updateDebridOrderList() {
     if (tbEnabled && !debridOrder.includes('TorBox')) {
         addDebridToList('TorBox');
     }
+    if (pmEnabled && !debridOrder.includes('Premiumize')) {
+        addDebridToList('Premiumize');
+    }
 
     Sortable.create(debridOrderList, {
         animation: 150,
@@ -292,7 +299,6 @@ function updateDebridOrderList() {
         }
     });
 }
-
 
 function addDebridToList(serviceName) {
     const debridOrderList = document.getElementById('debridOrderList');
@@ -380,91 +386,45 @@ function addDebridDownloaderOption(serviceName) {
     return input;
 }
 
+function updateProviderFields(updateDebridOrder = false) {
+    const rdEnabled = document.getElementById('debrid_rd')?.checked || false;
+    const adEnabled = document.getElementById('debrid_ad')?.checked || false;
+    const pmEnabled = document.getElementById('debrid_pm')?.checked || false;
+    const tbEnabled = document.getElementById('debrid_tb')?.checked || false;
 
-function updateProviderFields() {
-    const RDdebridChecked = document.getElementById('debrid_rd').checked ||
-        document.getElementById('debrid_rd').disabled;
-    const ADdebridChecked = document.getElementById('debrid_ad').checked ||
-        document.getElementById('debrid_ad').disabled;
-    const TBdebridChecked = document.getElementById('debrid_tb').checked ||
-        document.getElementById('debrid_tb').disabled;
-    const cacheChecked = document.getElementById('cache')?.checked;
-    const yggflixChecked = document.getElementById('yggflix')?.checked ||
-        document.getElementById('yggflix')?.disabled;
-    const sharewoodChecked = document.getElementById('sharewood')?.checked ||
-        document.getElementById('sharewood')?.disabled;
+    setElementDisplay('rd_debrid-fields', rdEnabled ? 'block' : 'none');
+    setElementDisplay('ad_debrid-fields', adEnabled ? 'block' : 'none');
+    setElementDisplay('pm_debrid-fields', pmEnabled ? 'block' : 'none');
+    setElementDisplay('tb_debrid-fields', tbEnabled ? 'block' : 'none');
 
-    // Mise à jour de l'affichage des champs
-    setElementDisplay('rd_debrid-fields', RDdebridChecked ? 'block' : 'none');
-    setElementDisplay('ad_debrid-fields', ADdebridChecked ? 'block' : 'none');
-    setElementDisplay('tb_debrid-fields', TBdebridChecked ? 'block' : 'none');
-    setElementDisplay('cache-fields', cacheChecked ? 'block' : 'none');
-    setElementDisplay('ygg-fields', yggflixChecked ? 'block' : 'none');
-    setElementDisplay('sharewood-fields', sharewoodChecked ? 'block' : 'none');
-
-    const debridOrderCheckbox = document.getElementById('debrid_order');
-    const debridOrderList = document.getElementById('debridOrderList');
-
-    if (debridOrderCheckbox && debridOrderList) {
-        const anyDebridEnabled = RDdebridChecked || ADdebridChecked || TBdebridChecked;
-
-        debridOrderCheckbox.disabled = !anyDebridEnabled;
-        
-        // Mise à jour de l'état de la case à cocher debrid_order
-        if (!anyDebridEnabled) {
-            debridOrderCheckbox.checked = false;
-        }
-
-        // Mise à jour de l'affichage de la liste d'ordre des débrideurs
-        debridOrderList.classList.toggle('hidden', !(anyDebridEnabled && debridOrderCheckbox.checked));
+    if (updateDebridOrder) {
+        if (rdEnabled) addDebridToList('Real-Debrid');
+        if (adEnabled) addDebridToList('AllDebrid');
+        if (pmEnabled) addDebridToList('Premiumize');
+        if (tbEnabled) addDebridToList('TorBox');
+        updateDebridDownloaderOptions();
     }
-
-    // Mise à jour des options de débrideur
-    updateDebridOrderList();
-    updateDebridDownloaderOptions();
-
-    // Vérification finale de la cohérence des états
-    ensureDebridConsistency();
-}
-
-function ensureDebridConsistency() {
-    const RDdebridChecked = document.getElementById('debrid_rd').checked;
-    const ADdebridChecked = document.getElementById('debrid_ad').checked;
-    const TBdebridChecked = document.getElementById('debrid_tb').checked;
-    const debridOrderChecked = document.getElementById('debrid_order').checked;
-
-    if (!RDdebridChecked && !ADdebridChecked && !TBdebridChecked) {
-        document.getElementById('debrid_order').checked = false;
-        document.getElementById('debridOrderList').classList.add('hidden');
-    }
-
-    if (debridOrderChecked && !RDdebridChecked && !ADdebridChecked && !TBdebridChecked) {
-        document.getElementById('debrid_order').checked = false;
-    }
-
-    updateDebridDownloaderOptions();
 }
 
 function loadData() {
-    const currentUrl = window.location.href;
-    let data = currentUrl.match(/\/([^\/]+)\/configure$/);
-    let decodedData = {};
-    if (data && data[1]) {
-        try {
-            decodedData = JSON.parse(atob(data[1]));
-        } catch (error) {
-            console.warn("No valid data to decode in URL, using default values.");
-        }
-    }
+    const config = localStorage.getItem('config');
+    if (config) {
+        const parsedConfig = JSON.parse(config);
 
-    function setElementValue(id, value, defaultValue) {
-        const element = document.getElementById(id);
-        if (element) {
-            if (element.type === 'radio' || element.type === 'checkbox') {
-                element.checked = (value !== undefined) ? value : defaultValue;
-            } else {
-                element.value = value || defaultValue || '';
-            }
+        // Load debrid services
+        if (parsedConfig.service) {
+            document.getElementById('debrid_rd').checked = parsedConfig.service.includes('Real-Debrid');
+            document.getElementById('debrid_ad').checked = parsedConfig.service.includes('AllDebrid');
+            document.getElementById('debrid_pm').checked = parsedConfig.service.includes('Premiumize');
+            document.getElementById('debrid_tb').checked = parsedConfig.service.includes('TorBox');
+        }
+
+        // Load tokens
+        if (parsedConfig.tokens) {
+            if (parsedConfig.tokens.rd) document.getElementById('rd_token_info').value = parsedConfig.tokens.rd;
+            if (parsedConfig.tokens.ad) document.getElementById('ad_token_info').value = parsedConfig.tokens.ad;
+            if (parsedConfig.tokens.pm) document.getElementById('pm_token_info').value = parsedConfig.tokens.pm;
+            if (parsedConfig.tokens.tb) document.getElementById('tb_token_info').value = parsedConfig.tokens.tb;
         }
     }
 
@@ -489,6 +449,7 @@ function loadData() {
         debrid_rd: false,
         debrid_ad: false,
         debrid_tb: false,
+        debrid_pm: false,
         tb_usenet: false,
         tb_search: false,
         debrid_order: false
@@ -496,7 +457,7 @@ function loadData() {
 
     // Appliquer les valeurs (de l'URL ou par défaut)
     Object.keys(defaultConfig).forEach(key => {
-        const value = decodedData[key] !== undefined ? decodedData[key] : defaultConfig[key];
+        const value = parsedConfig[key] !== undefined ? parsedConfig[key] : defaultConfig[key];
         if (key === 'metadataProvider') {
             setElementValue('tmdb', value === 'tmdb', true);
             setElementValue('cinemeta', value === 'cinemeta', false);
@@ -517,32 +478,33 @@ function loadData() {
         }
     });
 
-    const serviceArray = decodedData.service || [];
+    const serviceArray = parsedConfig.service || [];
     setElementValue('debrid_rd', serviceArray.includes('Real-Debrid'), defaultConfig.debrid_rd);
     setElementValue('debrid_ad', serviceArray.includes('AllDebrid'), defaultConfig.debrid_ad);
+    setElementValue('debrid_pm', serviceArray.includes('Premiumize'), defaultConfig.debrid_pm);
     setElementValue('debrid_tb', serviceArray.includes('TorBox'), defaultConfig.debrid_tb);
     setElementValue('debrid_order', serviceArray.length > 0, defaultConfig.debrid_order);
-    
+
     // Catalogues
-    setElementValue('ctg_yggtorrent', decodedData.yggtorrentCtg, defaultConfig.ctg_yggtorrent);
-    setElementValue('ctg_yggflix', decodedData.yggflixCtg, defaultConfig.ctg_yggflix);
-    
+    setElementValue('ctg_yggtorrent', parsedConfig.yggtorrentCtg, defaultConfig.ctg_yggtorrent);
+    setElementValue('ctg_yggflix', parsedConfig.yggflixCtg, defaultConfig.ctg_yggflix);
+
     // Tokens et passkeys
-    setElementValue('rd_token_info', decodedData.RDToken, '');
-    setElementValue('ad_token_info', decodedData.ADToken, '');
-    setElementValue('tb_token_info', decodedData.TBToken, '');
-    setElementValue('sharewoodPasskey', decodedData.sharewoodPasskey, '');
-    setElementValue('yggPasskey', decodedData.yggPasskey, '');
-    setElementValue('ApiKey', decodedData.apiKey, '');
-    setElementValue('exclusion-keywords', (decodedData.exclusionKeywords || []).join(', '), '');
-    
-    setElementValue('tb_usenet', decodedData.TBUsenet, defaultConfig.tb_usenet);
-    setElementValue('tb_search', decodedData.TBSearch, defaultConfig.tb_search);
+    setElementValue('rd_token_info', parsedConfig.RDToken, '');
+    setElementValue('ad_token_info', parsedConfig.ADToken, '');
+    setElementValue('pm_token_info', parsedConfig.PMToken, '');
+    setElementValue('tb_token_info', parsedConfig.TBToken, '');
+    setElementValue('sharewoodPasskey', parsedConfig.sharewoodPasskey, '');
+    setElementValue('yggPasskey', parsedConfig.yggPasskey, '');
+    setElementValue('ApiKey', parsedConfig.apiKey, '');
+    setElementValue('exclusion-keywords', (parsedConfig.exclusionKeywords || []).join(', '), '');
+    setElementValue('tb_usenet', parsedConfig.TBUsenet, defaultConfig.tb_usenet);
+    setElementValue('tb_search', parsedConfig.TBSearch, defaultConfig.tb_search);
 
     handleUniqueAccounts();
     updateProviderFields();
 
-    const debridDownloader = decodedData.debridDownloader;
+    const debridDownloader = parsedConfig.debridDownloader;
     if (debridDownloader) {
         const radioButton = document.querySelector(`input[name="debrid_downloader"][value="${debridDownloader}"]`);
         if (radioButton) {
@@ -556,84 +518,49 @@ function loadData() {
 }
 
 function getLink(method) {
-    const data = {
-        addonHost: new URL(window.location.href).origin,
-        apiKey: document.getElementById('ApiKey').value,
-        service: [],
-        RDToken: document.getElementById('rd_token_info')?.value,
-        ADToken: document.getElementById('ad_token_info')?.value,
-        TBToken: document.getElementById('tb_token_info')?.value,
-        TBUsenet: document.getElementById('tb_usenet')?.checked,
-        TBSearch: document.getElementById('tb_search')?.checked,
-        sharewoodPasskey: document.getElementById('sharewoodPasskey')?.value,
-        maxSize: parseInt(document.getElementById('maxSize').value) || 16,
-        exclusionKeywords: document.getElementById('exclusion-keywords').value.split(',').map(keyword => keyword.trim()).filter(keyword => keyword !== ''),
-        languages: languages.filter(lang => document.getElementById(lang).checked),
-        sort: sorts.find(sort => document.getElementById(sort).checked),
-        resultsPerQuality: parseInt(document.getElementById('resultsPerQuality').value) || 5,
-        maxResults: parseInt(document.getElementById('maxResults').value) || 5,
-        minCachedResults: parseInt(document.getElementById('minCachedResults').value) || 5,
-        exclusion: qualityExclusions.filter(quality => document.getElementById(quality).checked),
-        cacheUrl: document.getElementById('cacheUrl')?.value,
-        jackett: document.getElementById('jackett')?.checked,
-        cache: document.getElementById('cache')?.checked,
-        zilean: document.getElementById('zilean')?.checked,
-        yggflix: document.getElementById('yggflix')?.checked,
-        sharewood: document.getElementById('sharewood')?.checked,
-        yggtorrentCtg: document.getElementById('ctg_yggtorrent')?.checked,
-        yggflixCtg: document.getElementById('ctg_yggflix')?.checked,
-        yggPasskey: document.getElementById('yggPasskey')?.value,
-        torrenting: document.getElementById('torrenting').checked,
-        debrid: false,
-        metadataProvider: document.getElementById('tmdb').checked ? 'tmdb' : 'cinemeta',
-        debridDownloader: document.querySelector('input[name="debrid_downloader"]:checked')?.value
-    };
+    const config = {};
+    
+    // Get selected services
+    const services = [];
+    if (document.getElementById('debrid_rd').checked) services.push('Real-Debrid');
+    if (document.getElementById('debrid_ad').checked) services.push('AllDebrid');
+    if (document.getElementById('debrid_pm').checked) services.push('Premiumize');
+    if (document.getElementById('debrid_tb').checked) services.push('TorBox');
+    config.service = services;
 
-    data.service = Array.from(document.getElementById('debridOrderList').children).map(li => li.dataset.serviceName);
-    data.debrid = data.service.length > 0;
+    // Get tokens
+    config.RDToken = document.getElementById('rd_token_info')?.value || '';
+    config.ADToken = document.getElementById('ad_token_info')?.value || '';
+    config.PMToken = document.getElementById('pm_token_info')?.value || '';
+    config.TBToken = document.getElementById('tb_token_info')?.value || '';
 
-    const missingRequiredFields = [];
+    // Add other config values
+    config.TBUsenet = document.getElementById('tb_usenet')?.checked || false;
+    config.TBSearch = document.getElementById('tb_search')?.checked || false;
+    config.maxSize = parseInt(document.getElementById('maxSize').value) || 16;
+    config.exclusionKeywords = document.getElementById('exclusion-keywords').value.split(',').map(keyword => keyword.trim()).filter(keyword => keyword !== '');
+    config.languages = languages.filter(lang => document.getElementById(lang).checked);
+    config.sort = sorts.find(sort => document.getElementById(sort).checked);
+    config.resultsPerQuality = parseInt(document.getElementById('resultsPerQuality').value) || 5;
+    config.maxResults = parseInt(document.getElementById('maxResults').value) || 5;
+    config.minCachedResults = parseInt(document.getElementById('minCachedResults').value) || 5;
+    config.exclusion = qualityExclusions.filter(quality => document.getElementById(quality).checked);
+    config.cacheUrl = document.getElementById('cacheUrl')?.value;
+    config.cache = document.getElementById('cache')?.checked || false;
+    config.zilean = document.getElementById('zilean')?.checked || false;
+    config.yggflix = document.getElementById('yggflix')?.checked || false;
+    config.sharewood = document.getElementById('sharewood')?.checked || false;
+    config.yggtorrentCtg = document.getElementById('ctg_yggtorrent')?.checked || false;
+    config.yggflixCtg = document.getElementById('ctg_yggflix')?.checked || false;
+    config.yggPasskey = document.getElementById('yggPasskey')?.value || '';
+    config.sharewoodPasskey = document.getElementById('sharewoodPasskey')?.value || '';
+    config.apiKey = document.getElementById('ApiKey').value;
+    config.torrenting = document.getElementById('torrenting').checked;
+    config.debrid = services.length > 0;
+    config.metadataProvider = document.getElementById('tmdb').checked ? 'tmdb' : 'cinemeta';
+    config.debridDownloader = document.querySelector('input[name="debrid_downloader"]:checked')?.value;
 
-    if (data.cache && !data.cacheUrl) missingRequiredFields.push("Cache URL");
-    if (data.service.includes('Real-Debrid') && document.getElementById('rd_token_info') && !data.RDToken) missingRequiredFields.push("Real-Debrid Account Connection");
-    if (data.service.includes('AllDebrid') && document.getElementById('ad_token_info') && !data.ADToken) missingRequiredFields.push("AllDebrid Account Connection");
-    if (data.service.includes('TorBox') && document.getElementById('tb_token_info') && !data.TBToken) missingRequiredFields.push("TorBox Account Connection");
-    if (data.languages.length === 0) missingRequiredFields.push("Languages");
-    if (!data.apiKey) missingRequiredFields.push("API Key");
-    if (data.yggflix && document.getElementById('yggPasskey') && !data.yggPasskey) missingRequiredFields.push("Ygg Passkey");
-    if (data.sharewood && document.getElementById('sharewoodPasskey') && !data.sharewoodPasskey) missingRequiredFields.push("Sharewood Passkey");
-
-    if (missingRequiredFields.length > 0) {
-        alert(`Please fill all required fields: ${missingRequiredFields.join(", ")}`);
-        return false;
-    }
-
-    // Fonctions de validation
-    function validatePasskey(passkey) {
-        return /^[a-zA-Z0-9]{32}$/.test(passkey);
-    }
-
-    function validateApiKey(apiKey) {
-        return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(apiKey);
-    }
-
-    // Validation des champs
-    if (data.yggflix && data.yggPasskey && !validatePasskey(data.yggPasskey)) {
-        alert('Ygg Passkey doit contenir exactement 32 caractères alphanumériques');
-        return false;
-    }
-
-    if (data.sharewood && data.sharewoodPasskey && !validatePasskey(data.sharewoodPasskey)) {
-        alert('Sharewood Passkey doit contenir exactement 32 caractères alphanumériques');
-        return false;
-    }
-
-    if (!validateApiKey(data.apiKey)) {
-        alert('APIKEY doit être un UUID v4 valide');
-        return false;
-    }
-
-    const encodedData = btoa(JSON.stringify(data));
+    const encodedData = btoa(JSON.stringify(config));
     const stremio_link = `${window.location.host}/${encodedData}/manifest.json`;
 
     if (method === 'link') {
@@ -648,9 +575,21 @@ function getLink(method) {
     }
 }
 
-let showLanguageCheckBoxes = true;
-function showCheckboxes() {
-    let checkboxes = document.getElementById("languageCheckBoxes");
-    checkboxes.style.display = showLanguageCheckBoxes ? "block" : "none";
-    showLanguageCheckBoxes = !showLanguageCheckBoxes;
+function ensureDebridConsistency() {
+    const RDdebridChecked = document.getElementById('debrid_rd').checked;
+    const ADdebridChecked = document.getElementById('debrid_ad').checked;
+    const TBdebridChecked = document.getElementById('debrid_tb').checked;
+    const PMdebridChecked = document.getElementById('debrid_pm').checked;
+    const debridOrderChecked = document.getElementById('debrid_order').checked;
+
+    if (!RDdebridChecked && !ADdebridChecked && !TBdebridChecked && !PMdebridChecked) {
+        document.getElementById('debrid_order').checked = false;
+        document.getElementById('debridOrderList').classList.add('hidden');
+    }
+
+    if (debridOrderChecked && !RDdebridChecked && !ADdebridChecked && !TBdebridChecked && !PMdebridChecked) {
+        document.getElementById('debrid_order').checked = false;
+    }
+
+    updateDebridDownloaderOptions();
 }
