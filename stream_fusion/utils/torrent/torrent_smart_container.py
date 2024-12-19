@@ -329,18 +329,35 @@ class TorrentSmartContainer:
 
     def _update_availability_premiumize(self, response):
         self.logger.info("TorrentSmartContainer: Updating availability for Premiumize")
-        if response["status"] != "success":
+        if not response:
             self.logger.error(
-                f"TorrentSmartContainer: Premiumize API error: {response}"
+                f"TorrentSmartContainer: Empty response from Premiumize API"
             )
             return
+
         torrent_items = self.get_items()
-        for i, is_available in enumerate(response["response"]):
-            if bool(is_available):
-                torrent_items[i].availability = response["transcoded"][i]
-                self.logger.debug(
-                    f"TorrentSmartContainer: Updated availability for item {i}: {torrent_items[i].availability}"
-                )
+        for hash, status in response.items():
+            for item in torrent_items:
+                if item.info_hash.lower() == hash.lower():
+                    is_available = status.get("transcoded", False)
+                    item.availability = "PM" if is_available else None
+                    
+                    # Mettre à jour les détails du fichier si disponible
+                    if is_available:
+                        file_info = {
+                            "file_index": 0,  # Premiumize gère automatiquement la sélection du fichier
+                            "title": status.get("filename") or item.raw_title,
+                            "size": int(status.get("filesize", 0))  # S'assurer que la taille est un entier
+                        }
+                        self._update_file_details(item, [file_info], debrid="PM")
+                        self.logger.debug(
+                            f"TorrentSmartContainer: Updated file details for {item.raw_title}: {file_info}"
+                        )
+                    
+                    self.logger.debug(
+                        f"TorrentSmartContainer: Updated availability for {item.raw_title}: {item.availability}"
+                    )
+
         self.logger.info(
             "TorrentSmartContainer: Premiumize availability update completed"
         )
