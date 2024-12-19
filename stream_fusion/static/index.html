@@ -95,6 +95,19 @@
 
                         <div class="relative flex gap-x-3">
                             <div class="flex h-6 items-center">
+                                <input id="debrid_pm" name="debrid_pm" type="checkbox"
+                                    data-unique-account="{{ pm_unique_account|lower }}"
+                                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+                                    onchange="updateProviderFields(true)">
+                            </div>
+                            <div class="text-sm leading-6">
+                                <label for="debrid_pm" class="font-medium text-white">Enable Premiumize Service</label>
+                                <p class="text-gray-500 dark:text-gray-300">Activate Premiumize service for streaming.</p>
+                            </div>
+                        </div>
+
+                        <div class="relative flex gap-x-3">
+                            <div class="flex h-6 items-center">
                                 <input id="debrid_tb" name="debrid_tb" type="checkbox"
                                     data-unique-account="{{ tb_unique_account|lower }}"
                                     class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
@@ -349,6 +362,28 @@
                                         Search Engine</label>
                                     <p class="text-gray-500 dark:text-gray-300">Enable public torrent search
                                         functionality.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if not pm_unique_account %}
+                <div id="pm_debrid-fields" style="display: none;">
+                    <div class="border-b border-gray-900/10 dark:border-white/50 pb-12">
+                        <div class="flex flex-col items-center">
+                            <h2 class="text-white font-semibold leading-7">Premiumize Configuration</h2>
+                        </div>
+                        <div class="mt-10 flex justify-center">
+                            <div class="w-full max-w-md">
+                                <div class="grid grid-cols-1 gap-y-8">
+                                    <div>
+                                        <label for="pm_token_info"
+                                            class="block text-sm font-medium leading-6 text-white">Premiumize API Key</label>
+                                        <input type="text" name="pm_token_info" id="pm_token_info"
+                                            class="mt-2 block w-full rounded-md border-0 py-1.5 px-3 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                                    </div>
                                 </div>
                             </div>
                         </div>
