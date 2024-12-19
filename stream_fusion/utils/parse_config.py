@@ -17,4 +17,7 @@ def parse_config(b64config):
             pass
     if "anonymizeMagnets" not in config:
         config["anonymizeMagnets"] = False
+    if "addonHost" not in config:
+        logger.warning("addonHost not found in config, using default")
+        config["addonHost"] = "http://127.0.0.1:8000"
     return config
