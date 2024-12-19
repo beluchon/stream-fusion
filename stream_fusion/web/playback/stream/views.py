@@ -170,11 +170,23 @@ async def handle_download(
                 if query["torrent_download"] is not None
                 else None
             )
-            debrid_service.add_magnet_or_torrent(magnet, torrent_download, ip)
-            logger.success(
-                f"Playback: Added magnet or torrent to download service: {magnet[:50]}"
-            )
-
+            try:
+                # Start background caching
+                if debrid_service.start_background_caching(magnet, query):
+                    logger.success(
+                        f"Playback: Started background caching for magnet: {magnet[:50]}"
+                    )
+                else:
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Failed to start background caching"
+                    )
+            except Exception as e:
+                logger.error(f"Error starting background caching: {str(e)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to start background caching: {str(e)}"
+                )
         return settings.no_cache_video_url
     except Exception as e:
         await redis_cache.delete(cache_key)
