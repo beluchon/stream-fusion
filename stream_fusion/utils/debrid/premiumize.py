@@ -37,10 +37,48 @@ class Premiumize(BaseDebrid):
 
     def add_magnet(self, magnet, ip=None):
         url = f"{self.base_url}/transfer/create?apikey={self.api_key}"
-        form = {'src': magnet}
-        return self.json_response(url, method='post', data=form)
+        
+        # Vérifier si c'est un pack de saison
+        info_hash = get_info_hash_from_magnet(magnet)
+        is_season_pack = self._check_if_season_pack(magnet)
+        
+        form = {
+            'src': magnet,
+            'folder_name': f"season_pack_{info_hash}" if is_season_pack else None
+        }
+        
+        response = self.json_response(url, method='post', data=form)
+        
+        if is_season_pack and response and response.get("status") == "success":
+            # Si c'est un pack de saison, on attend que tous les fichiers soient disponibles
+            self._wait_for_season_pack(response.get("id"))
+            
+        return response
 
-    # Doesn't work for the time being. Premiumize does not support torrent file torrents
+    def _check_if_season_pack(self, magnet):
+        """Vérifie si le magnet link correspond à un pack de saison"""
+        # Vérifie les patterns communs dans le nom du torrent
+        name = magnet.lower()
+        season_indicators = [
+            "complete.season", 
+            "season.complete",
+            "s01.complete",
+            "saison.complete",
+            "season.pack",
+            "pack.saison"
+        ]
+        return any(indicator in name for indicator in season_indicators)
+
+    def _wait_for_season_pack(self, transfer_id, timeout=300):
+        """Attend que tous les fichiers d'un pack de saison soient disponibles"""
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            transfer_info = self.get_folder_or_file_details(transfer_id)
+            if transfer_info and transfer_info.get("status") == "finished":
+                return True
+            time.sleep(5)
+        return False
+
     def add_torrent(self, torrent_file):
         url = f"{self.base_url}/transfer/create?apikey={self.api_key}"
         form = {'file': torrent_file}
