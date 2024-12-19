@@ -90,6 +90,8 @@ class StreamParser:
             name = f"{INSTANTLY_AVAILABLE}instant\nAllDebrid\n({resolution})"
         elif torrent_item.availability == "TB":
             name = f"{INSTANTLY_AVAILABLE}instant\nTorBox\n({resolution})"
+        elif torrent_item.availability == "PM":
+            name = f"{INSTANTLY_AVAILABLE}instant\nPremiumize\n({resolution})"
         else:
             name = f"{DOWNLOAD_REQUIRED}download\n{self.config.get("debridDownloader", settings.download_service)}\n({resolution})"
         return name
