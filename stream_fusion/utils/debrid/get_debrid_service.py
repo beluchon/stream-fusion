@@ -68,7 +68,7 @@ def get_download_service(config):
 
 def get_debrid_service(config, service):
     if not service:
-        service == settings.download_service
+        service = settings.download_service
     if service == "RD":
         return RealDebrid(config)
     elif service == "AD":
