@@ -36,3 +36,7 @@ jobs:
           tags: |
             ghcr.io/telkaoss/stream-fusion:latest
             ghcr.io/telkaoss/stream-fusion:${{ github.event.release.tag_name }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.description=Docker image for Stream Fusion
+            org.opencontainers.image.title=stream-fusion
