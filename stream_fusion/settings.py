@@ -23,6 +23,7 @@ class DebridService(str, enum.Enum):
     RD = "Real-Debrid"
     AD = "AllDebrid"
     TB = "TorBox"
+    PM = "Premiumize"
 
 
 class NoCacheVideoLanguages(str, enum.Enum):
@@ -103,6 +104,11 @@ class Settings(BaseSettings):
     tb_unique_account: bool = check_env_variable("TB_TOKEN")
     tb_base_url: str = "https://api.torbox.app"
     tb_api_version: str = "v1"
+
+    # PREMIUMIZE
+    pm_token: str | None = None
+    pm_unique_account: bool = check_env_variable("PM_TOKEN")
+    pm_base_url: str = "https://www.premiumize.me/api"
 
     # LOGGING
     log_level: LogLevel = LogLevel.INFO
