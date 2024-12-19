@@ -3,6 +3,7 @@ from fastapi.exceptions import HTTPException
 from stream_fusion.utils.debrid.alldebrid import AllDebrid
 from stream_fusion.utils.debrid.realdebrid import RealDebrid
 from stream_fusion.utils.debrid.torbox import Torbox
+from stream_fusion.utils.debrid.premiumize import Premiumize
 from stream_fusion.logging_config import logger
 from stream_fusion.settings import settings
 
@@ -12,7 +13,7 @@ def get_all_debrid_services(config):
     debrid_service = []
     if not services:
         logger.error("No service configuration found in the config file.")
-        return
+        return []
     for service in services:
         if service == "Real-Debrid":
             debrid_service.append(RealDebrid(config))
@@ -23,6 +24,9 @@ def get_all_debrid_services(config):
         if service == "TorBox":
             debrid_service.append(Torbox(config))
             logger.debug("TorBox: service added to be use")
+        if service == "Premiumize":
+            debrid_service.append(Premiumize(config))
+            logger.debug("Premiumize: service added to be use")
     if not debrid_service:
         raise HTTPException(status_code=500, detail="Invalid service configuration.")
     
@@ -42,6 +46,8 @@ def get_download_service(config):
         return AllDebrid(config)
     elif service == "TorBox":
         return Torbox(config)
+    elif service == "Premiumize":
+        return Premiumize(config)
     else:
         logger.error("Invalid service configuration return by stremio in the query.")
         raise HTTPException(status_code=500, detail="Invalid service configuration return by stremio.")
@@ -56,6 +62,8 @@ def get_debrid_service(config, service):
         return AllDebrid(config)
     elif service == "TB":
         return Torbox(config)
+    elif service == "PM":
+        return Premiumize(config)
     elif service == "DL":
         return get_download_service(config)
     else:
