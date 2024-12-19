@@ -34,12 +34,22 @@ def get_all_debrid_services(config):
 
 def get_download_service(config):
     if not settings.download_service:
-        service = config['debridDownloader']
+        service = config.get('debridDownloader')
+        if not service:
+            # Si aucun service n'est spécifié, utiliser le service activé
+            services = config.get('service', [])
+            if len(services) == 1:
+                service = services[0]
+                logger.info(f"Using active service as download service: {service}")
+            else:
+                logger.error("Multiple services enabled. Please select a download service in the web interface.")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Multiple services enabled. Please select a download service in the web interface."
+                )
     else:
         service = settings.download_service
-    if not service:
-        logger.error("No download service found in the user config.")
-        return
+        
     if service == "Real-Debrid":
         return RealDebrid(config)
     elif service == "AllDebrid":
@@ -49,8 +59,11 @@ def get_download_service(config):
     elif service == "Premiumize":
         return Premiumize(config)
     else:
-        logger.error("Invalid service configuration return by stremio in the query.")
-        raise HTTPException(status_code=500, detail="Invalid service configuration return by stremio.")
+        logger.error(f"Invalid download service: {service}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Invalid download service: {service}. Please select a valid download service in the web interface."
+        )
 
 
 def get_debrid_service(config, service):
