@@ -1,7 +1,7 @@
 import hashlib
 import time
 from fastapi import APIRouter, Depends, HTTPException, Request
-from loguru import logger
+
 
 from stream_fusion.services.postgresql.dao.apikey_dao import APIKeyDAO
 from stream_fusion.services.postgresql.dao.torrentitem_dao import TorrentItemDAO
@@ -17,6 +17,7 @@ from stream_fusion.utils.filter_results import (
     merge_items,
     sort_items,
 )
+from stream_fusion.logging_config import logger
 from stream_fusion.utils.jackett.jackett_result import JackettResult
 from stream_fusion.utils.jackett.jackett_service import JackettService
 from stream_fusion.utils.parser.parser_service import StreamParser
