@@ -1,13 +1,13 @@
 import hashlib
 import time
 from fastapi import APIRouter, Depends, HTTPException, Request
+from loguru import logger
 
 from stream_fusion.services.postgresql.dao.apikey_dao import APIKeyDAO
 from stream_fusion.services.postgresql.dao.torrentitem_dao import TorrentItemDAO
 from stream_fusion.services.redis.redis_config import get_redis_cache_dependency
 from stream_fusion.utils.cache.cache import search_public
 from stream_fusion.utils.cache.local_redis import RedisCache
-from stream_fusion.logging_config import logger
 from stream_fusion.utils.debrid.get_debrid_service import get_all_debrid_services
 from stream_fusion.utils.filter.results_per_quality_filter import (
     ResultsPerQualityFilter,
@@ -141,26 +141,8 @@ async def get_results(
                     )
                     search_results.extend(public_cached_results)
 
-            if config["yggflix"] and len(search_results) < int(
-                config["minCachedResults"]
-            ):
-                yggflix_service = YggflixService(config)
-                yggflix_search_results = yggflix_service.search(media)
-                if yggflix_search_results:
-                    logger.success(
-                        f"Search: Found {len(yggflix_search_results)} results from YggFlix"
-                    )
-                    yggflix_search_results = filter_items(
-                        yggflix_search_results, media, config=config
-                    )
-                    yggflix_search_results = await torrent_service.convert_and_process(
-                        yggflix_search_results
-                    )
-                    search_results = merge_items(search_results, yggflix_search_results)
-
-            if config["zilean"] and len(search_results) < int(
-                config["minCachedResults"]
-            ):
+            # Prioriser Zilean en premier
+            if config["zilean"]:
                 zilean_service = ZileanService(config)
                 zilean_search_results = zilean_service.search(media)
                 if zilean_search_results:
@@ -183,26 +165,45 @@ async def get_results(
                     )
                     search_results = merge_items(search_results, zilean_search_results)
 
+            # Ensuite YggFlix si pas assez de résultats
+            if config["yggflix"] and len(search_results) < int(
+                config["minCachedResults"]
+            ):
+                yggflix_service = YggflixService(config)
+                yggflix_search_results = yggflix_service.search(media)
+                if yggflix_search_results:
+                    logger.success(
+                        f"Search: Found {len(yggflix_search_results)} results from YggFlix"
+                    )
+                    yggflix_search_results = filter_items(
+                        yggflix_search_results, media, config=config
+                    )
+                    yggflix_search_results = await torrent_service.convert_and_process(
+                        yggflix_search_results
+                    )
+                    search_results = merge_items(search_results, yggflix_search_results)
+
             if config["sharewood"] and len(search_results) < int(
                 config["minCachedResults"]
             ):
-                sharewood_service = SharewoodService(config)
-                sharewood_search_results = sharewood_service.search(media)
-                if sharewood_search_results:
-                    logger.success(
-                        f"Search: Found {len(sharewood_search_results)} results from Sharewood"
-                    )
-                    sharewood_search_results = filter_items(
-                        sharewood_search_results, media, config=config
-                    )
-                    sharewood_search_results = (
-                        await torrent_service.convert_and_process(
-                            sharewood_search_results
+                try:
+                    sharewood_service = SharewoodService(config)
+                    sharewood_search_results = sharewood_service.search(media)
+                    if sharewood_search_results:
+                        logger.success(
+                            f"Search: Found {len(sharewood_search_results)} results from Sharewood"
                         )
-                    )
-                    search_results = merge_items(
-                        search_results, sharewood_search_results
-                    )
+                        sharewood_search_results = filter_items(
+                            sharewood_search_results, media, config=config
+                        )
+                        sharewood_search_results = (
+                            await torrent_service.convert_and_process(
+                                sharewood_search_results
+                            )
+                        )
+                        search_results = merge_items(search_results, sharewood_search_results)
+                except Exception as e:
+                    logger.warning(f"Search: Sharewood search failed, skipping: {str(e)}")
 
             if config["jackett"] and len(search_results) < int(
                 config["minCachedResults"]
