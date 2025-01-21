@@ -1,4 +1,3 @@
-# Assuming the BaseDebrid class and necessary imports are already defined as shown previously
 import json
 
 from stream_fusion.settings import settings
@@ -51,7 +50,25 @@ class Premiumize(BaseDebrid):
         
         if is_season_pack and response and response.get("status") == "success":
             # Si c'est un pack de saison, on attend que tous les fichiers soient disponibles
-            self._wait_for_season_pack(response.get("id"))
+            transfer_id = response.get("id")
+            if transfer_id:
+                # Attendre que le transfert soit terminé
+                if self._wait_for_season_pack(transfer_id):
+                    # Une fois terminé, récupérer les détails du dossier
+                    folder_details = self.get_folder_or_file_details(transfer_id)
+                    if folder_details and folder_details.get("content"):
+                        # Trier les fichiers par taille pour prendre le plus gros fichier vidéo
+                        video_files = [f for f in folder_details["content"] 
+                                     if f.get("mime_type", "").startswith("video/")]
+                        if video_files:
+                            largest_file = max(video_files, key=lambda x: x.get("size", 0))
+                            response["selected_file"] = {
+                                "id": largest_file.get("id"),
+                                "name": largest_file.get("name"),
+                                "size": largest_file.get("size"),
+                                "link": largest_file.get("link"),
+                                "stream_link": largest_file.get("stream_link")
+                            }
             
         return response
 
@@ -65,7 +82,13 @@ class Premiumize(BaseDebrid):
             "s01.complete",
             "saison.complete",
             "season.pack",
-            "pack.saison"
+            "pack.saison",
+            ".s01.",
+            ".s02.",
+            ".s03.",
+            ".s04.",
+            ".s05.",
+            "saison"
         ]
         return any(indicator in name for indicator in season_indicators)
 
@@ -74,8 +97,13 @@ class Premiumize(BaseDebrid):
         start_time = time.time()
         while time.time() - start_time < timeout:
             transfer_info = self.get_folder_or_file_details(transfer_id)
-            if transfer_info and transfer_info.get("status") == "finished":
-                return True
+            if transfer_info and transfer_info.get("status") == "success":
+                # Vérifier si des fichiers vidéo sont présents
+                if transfer_info.get("content"):
+                    video_files = [f for f in transfer_info["content"] 
+                                 if f.get("mime_type", "").startswith("video/")]
+                    if video_files:
+                        return True
             time.sleep(5)
         return False
 
@@ -200,14 +228,34 @@ class Premiumize(BaseDebrid):
 
     def get_stream_link(self, query, config, ip=None):
         """Get a stream link for a magnet link"""
-        magnet = query.get("magnet")
-        if not magnet:
-            logger.error("No magnet link provided")
-            return "Error: No magnet link provided"
-
-        logger.info(f"Getting stream link for magnet")
+        if not query:
+            return None
+            
+        logger.info("Getting stream link for magnet")
         
-        # Try direct download first
+        # Vérifier si c'est une série et extraire la saison/épisode
+        season = None
+        episode = None
+        if isinstance(query, dict):
+            magnet = query.get("magnet")
+            if not magnet:
+                logger.error("No magnet link in query")
+                return None
+                
+            # Vérifier si c'est une série
+            if query.get("type") == "series" and query.get("season") and query.get("episode"):
+                season = query["season"].replace("S", "") if isinstance(query["season"], str) else query["season"]
+                episode = query["episode"].replace("E", "") if isinstance(query["episode"], str) else query["episode"]
+                try:
+                    season = int(season)
+                    episode = int(episode)
+                except (ValueError, TypeError):
+                    logger.error(f"Invalid season/episode format: {season}/{episode}")
+                    return None
+        else:
+            magnet = query
+
+        # Essayer d'abord le téléchargement direct
         try:
             response = self.json_response(
                 f"{self.base_url}/transfer/directdl",
@@ -216,47 +264,92 @@ class Premiumize(BaseDebrid):
             )
 
             if response and response.get("status") == "success":
-                logger.info("Got direct download link")
+                logger.info("Got direct download response")
                 if "content" in response and response["content"]:
-                    # Get the largest file from content
-                    largest_file = max(response["content"], key=lambda x: x.get("size", 0))
-                    stream_link = largest_file.get("stream_link") or largest_file.get("link")
-                    if stream_link:
-                        logger.info(f"Found stream link: {stream_link[:50]}...")
-                        return stream_link
+                    # Si c'est une série, chercher l'épisode correspondant
+                    if season is not None and episode is not None:
+                        matching_files = []
+                        for file in response["content"]:
+                            filename = file.get("path", "").split("/")[-1]
+                            if season_episode_in_filename(filename, season, episode):
+                                matching_files.append(file)
+                        
+                        if matching_files:
+                            # Prendre le plus gros fichier parmi ceux qui correspondent
+                            selected_file = max(matching_files, key=lambda x: x.get("size", 0))
+                            stream_link = selected_file.get("stream_link") or selected_file.get("link")
+                            if stream_link:
+                                logger.info(f"Found matching episode stream link: {stream_link[:50]}...")
+                                return stream_link
+                    
+                    # Si ce n'est pas une série ou si aucun fichier ne correspond,
+                    # prendre le plus gros fichier vidéo
+                    video_files = [f for f in response["content"] 
+                                 if isinstance(f.get("path", ""), str) and 
+                                 f.get("path", "").lower().endswith((".mkv", ".mp4", ".avi", ".m4v"))]
+                    
+                    if video_files:
+                        largest_file = max(video_files, key=lambda x: x.get("size", 0))
+                        stream_link = largest_file.get("stream_link") or largest_file.get("link")
+                        if stream_link:
+                            logger.info(f"Found stream link: {stream_link[:50]}...")
+                            return stream_link
                 elif response.get("location"):
                     logger.info(f"Found direct location: {response['location'][:50]}...")
                     return response["location"]
-            
-            # Check if the file is already being transferred
-            transfers = self.list_transfers()
-            for transfer in transfers:
-                if transfer.get("src") == magnet:
-                    status = transfer.get("status")
-                    if status == "finished":
-                        # Get the stream link from the finished transfer
-                        folder_id = transfer.get("folder_id")
-                        if folder_id:
-                            folder = self.get_folder_or_file_details(folder_id)
-                            if folder and folder.get("content"):
-                                largest_file = max(folder["content"], key=lambda x: x.get("size", 0))
-                                stream_link = largest_file.get("stream_link") or largest_file.get("link")
-                                if stream_link:
-                                    logger.info(f"Found stream link from finished transfer: {stream_link[:50]}...")
-                                    return stream_link
-                    elif status in ["queued", "downloading"]:
-                        logger.info(f"Transfer is in progress (status: {status})")
-                        return settings.no_cache_video_url
-
-            # If we get here, start background caching
-            logger.info("Starting background caching")
-            if self.start_background_caching(magnet):
-                logger.info("Successfully started background caching")
-                return settings.no_cache_video_url
-            else:
-                logger.error("Failed to start background caching")
-                return "Error: Failed to start background caching"
 
         except Exception as e:
-            logger.error(f"Error in get_stream_link: {str(e)}")
-            return f"Error: {str(e)}"
+            logger.error(f"Error in direct download: {str(e)}")
+            # Continue avec la méthode standard si le téléchargement direct échoue
+            
+        # Si le téléchargement direct a échoué, essayer la méthode standard
+        response = self.add_magnet(magnet, ip)
+        if not response or response.get("status") != "success":
+            logger.error("Failed to add magnet")
+            return None
+            
+        # Récupérer l'ID du transfert
+        transfer_id = response.get("id")
+        if not transfer_id:
+            logger.error("No transfer ID in response")
+            return None
+            
+        # Attendre que le transfert soit terminé
+        if not self._wait_for_season_pack(transfer_id):
+            logger.error("Transfer timed out")
+            return None
+            
+        # Récupérer les détails du dossier
+        folder_details = self.get_folder_or_file_details(transfer_id)
+        if not folder_details or not folder_details.get("content"):
+            logger.error("No content in folder details")
+            return None
+            
+        # Filtrer les fichiers vidéo
+        video_files = [f for f in folder_details["content"] 
+                      if isinstance(f.get("mime_type", ""), str) and 
+                      f.get("mime_type", "").startswith("video/")]
+        
+        # Si c'est une série, chercher l'épisode correspondant
+        if season is not None and episode is not None:
+            matching_files = []
+            for file in video_files:
+                filename = file.get("name", "")
+                if season_episode_in_filename(filename, season, episode):
+                    matching_files.append(file)
+                    
+            if matching_files:
+                # Prendre le plus gros fichier parmi ceux qui correspondent
+                selected_file = max(matching_files, key=lambda x: x.get("size", 0))
+                logger.info(f"Selected matching episode file: {selected_file.get('name')}")
+                return selected_file.get("stream_link")
+        
+        # Si ce n'est pas une série ou si aucun fichier ne correspond, 
+        # prendre le plus gros fichier vidéo
+        if video_files:
+            selected_file = max(video_files, key=lambda x: x.get("size", 0))
+            logger.info(f"Selected largest video file: {selected_file.get('name')}")
+            return selected_file.get("stream_link")
+            
+        logger.error("No suitable video file found")
+        return None
