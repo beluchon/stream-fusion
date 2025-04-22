@@ -615,7 +615,6 @@ function getLink(method) {
     if (data.service.includes('TorBox') && document.getElementById('tb_token_info') && !data.TBToken) missingRequiredFields.push("TorBox Account Connection");
     if (data.service.includes('Premiumize') && document.getElementById('pm_token_info') && !data.PMToken) missingRequiredFields.push("Premiumize Account Connection");
     if (data.languages.length === 0) missingRequiredFields.push("Languages");
-    if (!data.apiKey) missingRequiredFields.push("API Key");
     if (data.yggflix && document.getElementById('yggPasskey') && !data.yggPasskey) missingRequiredFields.push("Ygg Passkey");
     if (data.sharewood && document.getElementById('sharewoodPasskey') && !data.sharewoodPasskey) missingRequiredFields.push("Sharewood Passkey");
 
@@ -642,7 +641,7 @@ function getLink(method) {
         return false;
     }
 
-    if (!validateApiKey(data.apiKey)) {
+    if (data.apiKey && !validateApiKey(data.apiKey)) {
         alert('APIKEY doit être un UUID v4 valide');
         return false;
     }
