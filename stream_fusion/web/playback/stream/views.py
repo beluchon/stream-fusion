@@ -195,11 +195,10 @@ async def handle_download(
 
 
 async def get_stream_link(
-    decoded_query: str, config: dict, ip: str, redis_cache: RedisCache
+    decoded_query: str, config: dict, ip: str, redis_cache: RedisCache, cache_user_identifier: str
 ) -> str:
     logger.debug(f"Playback: Getting stream link for query: {decoded_query}, IP: {ip}")
-    api_key = config.get("apiKey")
-    cache_key = f"stream_link:{api_key}:{decoded_query}_{ip}"
+    cache_key = f"stream_link:{cache_user_identifier}:{decoded_query}"
 
     cached_link = await redis_cache.get(cache_key)
     if cached_link:
@@ -241,18 +240,25 @@ async def get_playback(
     try:
         config = parse_config(config)
         api_key = config.get("apiKey")
-        if not api_key:
-            logger.warning("Playback: API key not found in config.")
-            raise HTTPException(status_code=401, detail="API key not found in config.")
+        ip = request.client.host
+        cache_user_identifier = api_key if api_key else ip
 
-        await check_api_key(api_key, apikey_dao)
+        # Only validate the API key if it exists
+        if api_key:
+            try:
+                await check_api_key(api_key, apikey_dao)
+                logger.info(f"Playback: Valid API key provided by {ip}")
+            except HTTPException as e:
+                logger.warning(f"Playback: Invalid API key provided by {ip}. Error: {e.detail}")
+                raise e # Re-raise if validation fails for a provided key
+        else:
+            logger.info(f"Playback: No API key provided by {ip}. Proceeding without API key validation.")
 
         if not query:
             logger.warning("Playback: Query is empty")
             raise HTTPException(status_code=400, detail="Query required.")
 
         decoded_query = decodeb64(query)
-        ip = request.client.host
         logger.debug(f"Playback: Decoded query: {decoded_query}, Client IP: {ip}")
 
         query_dict = json.loads(decoded_query)
@@ -260,19 +266,23 @@ async def get_playback(
         service = query_dict.get("service", False)
 
         if service == "DL":
+            # Pass cache_user_identifier to handle_download if needed, otherwise it uses ip/query_dict
             link = await handle_download(query_dict, config, ip, redis_cache)
             return RedirectResponse(url=link, status_code=status.HTTP_302_FOUND)
 
-        lock_key = f"lock:stream:{api_key}:{decoded_query}_{ip}"
+        # Use cache_user_identifier for lock key
+        lock_key = f"lock:stream:{cache_user_identifier}:{decoded_query}"
         lock = redis_client.lock(lock_key, timeout=60)
 
         try:
             if await lock.acquire(blocking=False):
                 logger.debug("Playback: Lock acquired, getting stream link")
-                link = await get_stream_link(decoded_query, config, ip, redis_cache)
+                # Pass cache_user_identifier to get_stream_link
+                link = await get_stream_link(decoded_query, config, ip, redis_cache, cache_user_identifier)
             else:
                 logger.debug("Playback: Lock not acquired, waiting for cached link")
-                cache_key = f"stream_link:{api_key}:{decoded_query}_{ip}"
+                # Use cache_user_identifier for cache key lookup
+                cache_key = f"stream_link:{cache_user_identifier}:{decoded_query}"
                 for _ in range(30):
                     await asyncio.sleep(1)
                     cached_link = await redis_cache.get(cache_key)
@@ -376,17 +386,25 @@ async def head_playback(
     try:
         config = parse_config(config)
         api_key = config.get("apiKey")
+        ip = request.client.host
+        cache_user_identifier = api_key if api_key else ip
+
+        # Only validate the API key if it exists
         if api_key:
-            await check_api_key(api_key, apikey_dao)
+            try:
+                await check_api_key(api_key, apikey_dao)
+                logger.info(f"Playback HEAD: Valid API key provided by {ip}")
+            except HTTPException as e:
+                logger.warning(f"Playback HEAD: Invalid API key provided by {ip}. Error: {e.detail}")
+                raise e # Re-raise if validation fails for a provided key
         else:
-            logger.warning("Playback: API key not found in config.")
-            raise HTTPException(status_code=401, detail="API key not found in config.")
+            # Don't raise 401, just log if no key is provided
+            logger.info(f"Playback HEAD: No API key provided by {ip}. Proceeding without API key validation.")
 
         if not query:
             raise HTTPException(status_code=400, detail="Query required.")
 
         decoded_query = decodeb64(query)
-        ip = request.client.host
         query_dict = json.loads(decoded_query)
         service = query_dict.get("service", False)
 
@@ -401,8 +419,8 @@ async def head_playback(
         }
 
         if service == "DL":
-            # Check if download is in progress
-            download_cache_key = f"download:{api_key}:{json.dumps(query_dict)}_{ip}"
+            # Check if download is in progress using cache_user_identifier
+            download_cache_key = f"download:{cache_user_identifier}:{json.dumps(query_dict)}"
             if await redis_cache.get(download_cache_key) == DOWNLOAD_IN_PROGRESS_FLAG:
                 logger.info("Playback: Download in progress, returning 202 Accepted")
                 return Response(status_code=status.HTTP_202_ACCEPTED, headers=headers)
@@ -410,7 +428,8 @@ async def head_playback(
                 logger.info("Playback: Download not started, returning 200 OK")
                 return Response(status_code=status.HTTP_200_OK, headers=headers)
 
-        cache_key = f"stream_link:{api_key}:{decoded_query}_{ip}"
+        # Use cache_user_identifier for stream link cache key
+        cache_key = f"stream_link:{cache_user_identifier}:{decoded_query}"
 
         for _ in range(30):
             if await redis_cache.exists(cache_key):
