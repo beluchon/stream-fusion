@@ -44,10 +44,10 @@ router = APIRouter()
 
 @router.get("/{config}/stream/{stream_type}/{stream_id}", response_model=SearchResponse)
 async def get_results(
+    request: Request,
     config: str,
     stream_type: str,
     stream_id: str,
-    request: Request,
     redis_cache: RedisCache = Depends(get_redis_cache_dependency),
     apikey_dao: APIKeyDAO = Depends(),
     torrent_dao: TorrentItemDAO = Depends(),
@@ -58,11 +58,24 @@ async def get_results(
     stream_id = stream_id.replace(".json", "")
     config = parse_config(config)
     api_key = config.get("apiKey")
+    ip_address = request.client.host
+    # Only validate the API key if it exists
     if api_key:
-        await check_api_key(api_key, apikey_dao)
+        try:
+            await check_api_key(api_key, apikey_dao)
+            logger.info(f"Search: Valid API key provided by {ip_address}")
+        except HTTPException as e:
+             # Re-raise the exception if validation fails
+             logger.warning(f"Search: Invalid API key provided by {ip_address}. Error: {e.detail}")
+             raise e
     else:
-        logger.warning("Search: API key not found in config.")
-        raise HTTPException(status_code=401, detail="API key not found in config.")
+        logger.info(f"Search: No API key provided by {ip_address}. Proceeding without API key validation.")
+
+    debrid_services = get_all_debrid_services(config)
+    logger.debug(f"Search: Found {len(debrid_services)} debrid services")
+    logger.info(
+        f"Search: Debrid services: {[debrid.__class__.__name__ for debrid in debrid_services]}"
+    )
 
     def get_metadata():
         logger.info(f"Search: Fetching metadata from {config['metadataProvider']}")
@@ -78,12 +91,11 @@ async def get_results(
     logger.debug(f"Search: Retrieved media metadata for {str(media.titles)}")
 
     def stream_cache_key(media):
+        cache_user_identifier = api_key if api_key else ip_address
         if isinstance(media, Movie):
-            key_string = (
-                f"stream:{api_key}:{media.titles[0]}:{media.year}:{media.languages[0]}"
-            )
+            key_string = f"stream:{cache_user_identifier}:{media.titles[0]}:{media.year}:{media.languages[0]}"
         elif isinstance(media, Series):
-            key_string = f"stream:{api_key}:{media.titles[0]}:{media.languages[0]}:{media.season}{media.episode}"
+            key_string = f"stream:{cache_user_identifier}:{media.titles[0]}:{media.languages[0]}:{media.season}{media.episode}"
         else:
             logger.error("Search: Only Movie and Series are allowed as media!")
             raise HTTPException(
@@ -98,12 +110,6 @@ async def get_results(
         total_time = time.time() - start
         logger.success(f"Search: Request completed in {total_time:.2f} seconds")
         return SearchResponse(streams=cached_result)
-
-    debrid_services = get_all_debrid_services(config)
-    logger.debug(f"Search: Found {len(debrid_services)} debrid services")
-    logger.info(
-        f"Search: Debrid services: {[debrid.__class__.__name__ for debrid in debrid_services]}"
-    )
 
     def media_cache_key(media):
         if isinstance(media, Movie):
