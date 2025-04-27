@@ -115,9 +115,10 @@ class Settings(BaseSettings):
     log_path: str = "/app/config/logs/stream-fusion.log"
     log_redacted: bool = True
 
-    # SECUIRITY
+    # SECURITY
     secret_api_key: str | None = None
     security_hide_docs: bool = True
+    allow_anonymous_access: bool = True  # Allow access without API key
 
     # POSTGRESQL_DB
     # TODO: Change the values, but break dev environment
