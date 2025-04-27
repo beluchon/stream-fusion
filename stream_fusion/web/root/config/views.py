@@ -5,11 +5,11 @@ from fastapi.templating import Jinja2Templates
 
 from stream_fusion.logging_config import logger
 from stream_fusion.services.postgresql.dao.apikey_dao import APIKeyDAO
+from stream_fusion.settings import settings
 from stream_fusion.utils.parse_config import parse_config
 from stream_fusion.utils.security.security_api_key import check_api_key
 from stream_fusion.version import get_version
 from stream_fusion.web.root.config.schemas import ManifestResponse
-from stream_fusion.settings import settings
 
 router = APIRouter()
 
@@ -108,8 +108,13 @@ async def get_manifest(config: str, apikey_dao: APIKeyDAO = Depends()):
     if api_key:
         await check_api_key(api_key, apikey_dao)
     else:
-        logger.warning("API key not found in config.")
-        raise HTTPException(status_code=401, detail="API key not found in config.")
+        # Check if anonymous access is allowed
+        if not settings.allow_anonymous_access: # If NOT allowed
+            logger.warning("Anonymous access denied and API key not found in config.")
+            raise HTTPException(status_code=401, detail="API key required or anonymous access disabled.")
+        else: # If anonymous access IS allowed, just log and continue
+            logger.info("Proceeding without API key (anonymous access allowed).")
+            # No exception is raised, execution continues
 
     yggflix_ctg = config.get("yggflixCtg", True)
     yggtorrent_ctg = config.get("yggtorrentCtg", True)
