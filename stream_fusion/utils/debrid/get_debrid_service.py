@@ -112,7 +112,7 @@ def get_download_service(config):
             return bool(token.get('access_token'))
         if isinstance(token, str):
             return bool(token.strip())
-        return bool(token)  # For any other type
+        return bool(token)  # Pour tout autre type
     
     has_rd_token = is_valid_token(config.get('RDToken'))
     has_ad_token = is_valid_token(config.get('ADToken'))
@@ -133,7 +133,7 @@ def get_download_service(config):
         
         logger.warning(f"No valid token for {target_service_name}, looking for an alternative service...")
         
-        # Look for a service with a valid token
+        # Chercher un service avec un token valide
         if has_tb_token:
             logger.info(f"TorBox token found. Using TorBox instead of {target_service_name}.")
             target_service_name = "TorBox"
@@ -163,26 +163,19 @@ def get_download_service(config):
             stremthru.store_code = "pm"
         elif target_service_name == "TorBox":
             stremthru.store_code = "tb"
-        
+            
         logger.debug(f"StremThruDebrid: store_code set to '{stremthru.store_code}' for service '{target_service_name}'")
         return stremthru
-        
+
     # Direct service instantiation
     if target_service_name == "Real-Debrid":
-        from stream_fusion.utils.debrid.realdebrid import RealDebrid
         return RealDebrid(config)
     elif target_service_name == "AllDebrid":
-        from stream_fusion.utils.debrid.alldebrid import AllDebrid
         return AllDebrid(config)
-    elif target_service_name == "Premiumize":
-        from stream_fusion.utils.debrid.premiumize import Premiumize
-        return Premiumize(config)
     elif target_service_name == "TorBox":
-        from stream_fusion.utils.debrid.torbox import Torbox
         return Torbox(config)
-    elif target_service_name == "StremThru":
-        from stream_fusion.utils.debrid.stremthrudebrid import StremThruDebrid
-        return StremThruDebrid(config)
+    elif target_service_name == "Premiumize":
+        return Premiumize(config)
     else:
         logger.error(f"Unsupported download service: {target_service_name}")
         raise HTTPException(status_code=500, detail=f"Unsupported download service: {target_service_name}")
@@ -237,12 +230,9 @@ def get_debrid_service(config, service_short_code, request: Request):
         logger.warning(f"get_debrid_service: Unknown service code '{service_short_code}'.")
         raise HTTPException(status_code=400, detail=f"Unknown service code: {service_short_code}")
 
-    # Check if StremThru is enabled and configured
-    if config.get('stremthru_enabled', False) and config.get('stremthru_url'):
-        logger.info(f"StremThru enabled. Using StremThru as a proxy for '{target_service_name}'.")
-        from stream_fusion.utils.debrid.stremthrudebrid import StremThruDebrid
-        
-        # Create a StremThruDebrid instance
+    # Use StremThru proxy for all services if enabled
+    if config.get('stremthru_enabled', False):
+        logger.info(f"StremThru activé. Délégation de '{target_service_name}' au client StremThru.")
         stremthru = StremThruDebrid(config, session=http_session)
         
         # Set the store_code based on the target service

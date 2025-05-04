@@ -13,6 +13,35 @@ from stream_fusion.logging_config import logger
 from stream_fusion.settings import settings
 
 
+def format_log_data(data, max_length=200):
+    """Format data for logging to prevent huge outputs.
+    
+    Args:
+        data: The data to format (usually a dict or list)
+        max_length: Maximum length of the formatted string
+        
+    Returns:
+        str: A formatted string suitable for logging
+    """
+    if data is None:
+        return "None"
+        
+    if isinstance(data, dict):
+        # Just show the keys for dictionaries
+        return f"Dict with keys: {list(data.keys())}"
+    elif isinstance(data, list):
+        # Show length and first few items for lists
+        list_len = len(data)
+        preview = str(data[:3])[:max_length]
+        return f"List with {list_len} items, preview: {preview}..."
+    else:
+        # For other types, limit the string length
+        str_data = str(data)
+        if len(str_data) > max_length:
+            return f"{str_data[:max_length]}... (truncated)"
+        return str_data
+
+
 class BaseDebrid:
     def __init__(self, config, session: aiohttp.ClientSession = None):
         self.config = config
@@ -121,8 +150,9 @@ class BaseDebrid:
                     except aiohttp.ContentTypeError as json_err: # Catch aiohttp's specific error
                         self.logger.error(f"BaseDebrid: Invalid JSON response: {json_err}")
                         resp_text = await response.text()
+                        # Utiliser format_log_data pour limiter la taille des logs
                         self.logger.debug(
-                            f"BaseDebrid: Response content: {resp_text[:200]}..."
+                            f"BaseDebrid: Response content: {format_log_data(resp_text)}"
                         )
                         if attempt < max_attempts - 1:
                             wait_time = 2**attempt + 1

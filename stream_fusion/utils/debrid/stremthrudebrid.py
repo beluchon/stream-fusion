@@ -364,6 +364,9 @@ class StremThruDebrid(BaseDebrid):
         cached_hashes = set()
         try:
             res = await self._request('GET', '/v0/store/magnets/check', store_name, params=params)
+            # Log complet de la réponse pour débogage
+            logger.info(f"StremThruDebrid.get_cached_files: Raw API response for store '{store_name}': {res}")
+            
             api_items = res.get('data',{}).get('items',[])
             logger.debug(f"StremThruDebrid.get_cached_files: Received {len(api_items)} items from API for store '{store_name}'")
             
@@ -373,6 +376,8 @@ class StremThruDebrid(BaseDebrid):
                 h = it.get('hash')
                 if h and h in out:
                     fs = it.get('files', [])
+                    # Log complet de l'item pour débogage
+                    logger.debug(f"StremThruDebrid.get_cached_files: Raw API item for hash {h}: {it}")
                     
                     # Check if the torrent is actually cached
                     is_cached = False
@@ -380,11 +385,17 @@ class StremThruDebrid(BaseDebrid):
                         # For AllDebrid, check multiple fields in priority order
                         if 'ready' in it:
                             is_cached = bool(it.get('ready'))
+                            logger.debug(f"StremThruDebrid.get_cached_files: AllDebrid check - using 'ready' field: {is_cached}")
+                        # 2. Vérifier le champ 'instant' (si True, c'est en cache)
                         elif 'instant' in it:
                             is_cached = bool(it.get('instant'))
+                            logger.debug(f"StremThruDebrid.get_cached_files: AllDebrid check - using 'instant' field: {is_cached}")
+                        # 3. Vérifier le champ 'status' (si 'ready' ou 'cached', c'est en cache)
                         elif 'status' in it:
                             status = it.get('status', '').lower()
                             is_cached = status in ['ready', 'cached', 'completed', 'downloaded']
+                            logger.debug(f"StremThruDebrid.get_cached_files: AllDebrid check - using 'status' field: {status} -> {is_cached}")
+                        # 4. Vérifier le champ 'cached' standard
                         else:
                             is_cached = bool(it.get('cached', False))
                     else:
@@ -405,6 +416,8 @@ class StremThruDebrid(BaseDebrid):
                             'size': f.get('size'),
                             'cached': is_cached  # Use the actual cache status
                         })
+                    
+                    logger.debug(f"StremThruDebrid.get_cached_files: Hash {h} is {'cached' if is_cached else 'not cached'} according to API")
         except Exception as e:
             logger.error(f"StremThruDebrid.get_cached_files: Error checking magnets: {e}")
         
@@ -413,7 +426,7 @@ class StremThruDebrid(BaseDebrid):
             if h not in cached_hashes or not out[h]:  # If not cached or no files
                 item = items_by_hash.get(h)
                 if item:
-                    # Get the file name from the item
+                    # Récupérer le nom du fichier depuis l'item
                     file_name = getattr(item, 'file_name', None) or getattr(item, 'raw_title', f"Unknown file ({h})")
                     file_size = getattr(item, 'size', 0)
                     

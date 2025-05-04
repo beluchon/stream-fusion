@@ -4,7 +4,7 @@ from urllib.parse import unquote
 
 from fastapi import HTTPException
 
-from stream_fusion.utils.debrid.base_debrid import BaseDebrid
+from stream_fusion.utils.debrid.base_debrid import BaseDebrid, format_log_data
 from stream_fusion.utils.general import season_episode_in_filename
 from stream_fusion.logging_config import logger
 from stream_fusion.settings import settings
@@ -77,12 +77,16 @@ class AllDebrid(BaseDebrid):
             # Ensure status_data and nested keys exist before accessing
             if status_data and 'data' in status_data and 'magnets' in status_data['data'] and 'status' in status_data['data']['magnets']:
                  return status_data["data"]["magnets"]["status"] == "Ready"
-            logger.warning(f"Unexpected structure in check_magnet_status response: {status_data}")
+            
+            # Utiliser format_log_data pour limiter la taille des logs
+            logger.warning(f"Unexpected structure in check_magnet_status response: {format_log_data(status_data)}")
             return False
 
         # Pass the async helper function to wait_for_ready_status
-        if not await self.wait_for_ready_status(_check_status):
-            logger.error("AllDebrid: Torrent not ready, caching in progress.")
+        # Utiliser un timeout plus court (15 secondes) pour éviter de faire attendre l'utilisateur trop longtemps
+        if not await self.wait_for_ready_status(_check_status, timeout=15):
+            logger.warning("AllDebrid: Torrent not ready, returning non-cached video URL")
+            # Marquer ce torrent comme non mis en cache mais toujours affichable
             return settings.no_cache_video_url
         logger.info("AllDebrid: Torrent is ready.")
 

@@ -74,6 +74,13 @@ class TorrentItemModel(Base):
                     model_dict[attr] = False
                 elif attr == "seeders":
                     model_dict[attr] = int(value) if value else 0
+                # Convertir les objets bytes en str pour éviter les erreurs de sérialisation JSON
+                elif isinstance(value, bytes):
+                    try:
+                        model_dict[attr] = value.decode('utf-8')
+                    except UnicodeDecodeError:
+                        # Si le décodage échoue, utiliser une représentation hexadécimale
+                        model_dict[attr] = value.hex()
                 else:
                     model_dict[attr] = value
 
@@ -113,4 +120,22 @@ class TorrentItemModel(Base):
                 return json.loads(value)
             except json.JSONDecodeError:
                 return None
+        elif isinstance(value, bytes):
+            try:
+                # Essayer de décoder en UTF-8 puis parser en JSON
+                return json.loads(value.decode('utf-8'))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                # Si le décodage ou le parsing échoue, retourner une représentation hexadécimale
+                return value.hex()
+        elif isinstance(value, dict) or isinstance(value, list):
+            # Traiter récursivement les dictionnaires et listes pour convertir les bytes
+            try:
+                return json.loads(json.dumps(value, default=lambda o: 
+                    o.decode('utf-8') if isinstance(o, bytes) else 
+                    o.hex() if isinstance(o, bytes) else 
+                    str(o) if not isinstance(o, (str, int, float, bool, type(None), list, dict)) else o
+                ))
+            except Exception:
+                # En cas d'échec, essayer de convertir en string
+                return str(value)
         return value

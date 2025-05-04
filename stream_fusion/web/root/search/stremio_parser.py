@@ -72,41 +72,31 @@ def parse_to_debrid_stream(
     results: queue.Queue,
     media: Media,
 ):
-    # Détection des liens StremThru et de leur état de cache
+    # Detect StremThru links and their cache status
     is_stremthru = False
     stremthru_code = ""
     
-    # Détection des liens StremThru via l'URL
+    # Detect StremThru links via URL
     if hasattr(torrent_item, 'link') and torrent_item.link and 'sf.stremiofr.com/playback' in torrent_item.link:
         is_stremthru = True
         service_match = re.search(r'service=([A-Za-z]{2})', torrent_item.link)
         if service_match:
             stremthru_code = service_match.group(1).upper()
     
-    # Détection des liens StremThru via availability ("ST:XX")
+    # Detect StremThru links via availability attribute ("ST:XX")
     avail = torrent_item.availability
     if avail and isinstance(avail, str) and avail.startswith("ST:"):
         is_stremthru = True
         stremthru_code = avail.replace("ST:", "")
     
-    # Déterminer si le lien StremThru est en cache
-    # Par défaut, on considère que 50% des liens StremThru sont en cache (pour simuler)
+    # Determine if the StremThru link is cached
     is_cached_stremthru = False
     if is_stremthru:
-        # Pour simuler des liens en cache et non en cache, on utilise une logique basée sur le titre
-        if "2160p" in torrent_item.raw_title or "4K" in torrent_item.raw_title:
+        # Check if the 'cached' attribute is defined and True
+        if hasattr(torrent_item, 'cached') and torrent_item.cached:
             is_cached_stremthru = True
-            print(f"DEBUG - STREMTHRU CACHED - Torrent with 2160p/4K is cached: {torrent_item.raw_title}")
-        elif "1080p" in torrent_item.raw_title and ("x265" in torrent_item.raw_title or "H265" in torrent_item.raw_title):
-            is_cached_stremthru = True
-            print(f"DEBUG - STREMTHRU CACHED - Torrent with 1080p and x265/H265 is cached: {torrent_item.raw_title}")
         else:
             is_cached_stremthru = False
-            print(f"DEBUG - STREMTHRU NOT CACHED - Torrent is not cached: {torrent_item.raw_title}")
-    
-    # Log pour déboguer l'attribut availability
-    print(f"DEBUG - parse_to_debrid_stream - torrent_item.raw_title: {torrent_item.raw_title}")
-    print(f"DEBUG - parse_to_debrid_stream - torrent_item.availability: {avail}")
 
     parsed_data = torrent_item.parsed_data
     resolution = parsed_data.resolution if parsed_data.resolution else "Unknow"
@@ -114,37 +104,42 @@ def parse_to_debrid_stream(
     title_prefix = ""
 
     if is_stremthru:
-        # Logique StremThru
+        # StremThru logic
         icon = INSTANTLY_AVAILABLE if is_cached_stremthru else DOWNLOAD_REQUIRED
         code_suffix = '+' if is_cached_stremthru else ''
         name = f"{icon}{stremthru_code}{code_suffix}"
         title_prefix = f"[{stremthru_code}{code_suffix}] "
     elif avail == 'PM':
-        # Premiumize: Vérifier pm_cached
+        # Premiumize: Check pm_cached
         if torrent_item.pm_cached:
             name = f"{INSTANTLY_AVAILABLE}PM+"
             title_prefix = "[PM+] "
         else:
             name = f"{DOWNLOAD_REQUIRED}PM"
             title_prefix = "[PM] "
-    # Cas spécifiques pour TorBox
+    # Special case for AllDebrid
+    elif avail == 'AD':
+        # For AllDebrid, links are always considered cached
+        name = f"{INSTANTLY_AVAILABLE}AD+"
+        title_prefix = "[AD+] "
+    # Special cases for TorBox
     elif avail == 'TB+':
-        print(f"DEBUG - TB+ FOUND - Processing TB+ torrent (cached): {torrent_item.raw_title}")
         name = f"{INSTANTLY_AVAILABLE}TB+"
         title_prefix = "[TB+] "
     elif avail == 'TB-':
-        print(f"DEBUG - TB- FOUND - Processing TB- torrent (not cached): {torrent_item.raw_title}")
         name = f"{DOWNLOAD_REQUIRED}TB"
-        title_prefix = "[TB] "
+        title_prefix = "[TB-] "
     elif avail == 'TB':
-        # Dans la version master, tous les torrents avec availability = "TB" sont considérés comme mis en cache
-        print(f"DEBUG - TB BASIC - Found TB in availability for {torrent_item.raw_title}")
+        # In the master version, all torrents with availability = "TB" are considered cached
         name = f"{INSTANTLY_AVAILABLE}TB+"
         title_prefix = "[TB+] "
-    # Cas spécial pour les torrents TorBox non disponibles (availability = None ou vide)
-    elif avail is None or avail == "" or avail == " ":
-        # Afficher les torrents non disponibles avec la flèche bleue et TB
-        print(f"DEBUG - TB NON-AVAILABLE - Processing non-available TorBox torrent: {torrent_item.raw_title}")
+    # Special case for unavailable TorBox torrents (availability = None)
+    elif avail is None:
+        # Si c'est un torrent Torbox (ou traité par Torbox), on affiche la flèche bleue
+        name = f"{DOWNLOAD_REQUIRED}TB"
+        title_prefix = "[TB] "
+    # Fallback for other TorBox torrents with empty availability
+    elif torrent_item.indexer and "torbox" in torrent_item.indexer.lower():
         name = f"{DOWNLOAD_REQUIRED}TB"
         title_prefix = "[TB] "
     elif avail == 'AD':
@@ -155,12 +150,12 @@ def parse_to_debrid_stream(
         # Cas par défaut (liens directs, etc.)
         name = torrent_item.file_name or torrent_item.raw_title
         
-    # Ajouter la résolution au format de la version master
-    name += f"\n |_{resolution}_|"
+    # Add resolution to name
+    if resolution != "Unknow":
+        name += f"\n |_{resolution}_|"
 
-    # --- Réintégration de la construction détaillée de la description --- 
+    # --- Detailed description construction --- 
     parsed_data: ParsedData = torrent_item.parsed_data
-    # Sinon, ne rien faire
 
     size_in_gb = round(int(torrent_item.size) / 1024 / 1024 / 1024, 2)
 

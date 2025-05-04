@@ -164,7 +164,7 @@ async def handle_download(
                 else None
             )
             privacy = query.get("privacy", "private")
-            torrent_info = debrid_service.add_magnet_or_torrent(
+            torrent_info = await debrid_service.add_magnet_or_torrent(
                 magnet, torrent_download, ip, privacy
             )
             logger.success(
