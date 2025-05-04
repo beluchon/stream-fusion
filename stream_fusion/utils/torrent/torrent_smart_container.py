@@ -300,60 +300,40 @@ class TorrentSmartContainer:
         )
 
     def _update_availability_torbox(self, response, media):
-        self.logger.info("TorrentSmartContainer: Updating availability for Torbox")
-        print(f"DEBUG - TORBOX UPDATE - Starting update for TorBox availability")
-        
         if response["success"] is False:
             self.logger.error(f"TorrentSmartContainer: Torbox API error: {response}")
-            print(f"DEBUG - TORBOX ERROR - API error: {response}")
             return
 
-        torrent_count = len(response.get('data', []))
-        self.logger.info(f"TorrentSmartContainer: Found {torrent_count} TorBox torrents")
-        print(f"DEBUG - TORBOX COUNT - Found {torrent_count} TorBox torrents")
-        
         # Créer une copie des torrents pour simuler des torrents non disponibles
         all_items = self.get_items()
-        non_tb_items = []
         tb_hashes = set()
         
         # D'abord, traiter les torrents retournés par l'API TorBox
         for data in response["data"]:
             hash_value = data.get("hash", "")
-            print(f"DEBUG - TORBOX HASH - Processing hash: {hash_value}")
             tb_hashes.add(hash_value.lower())
             
             if hash_value not in self.__itemsDict:
-                self.logger.warning(f"TorrentSmartContainer: Hash {hash_value} not found in items dictionary")
-                print(f"DEBUG - TORBOX MISSING - Hash {hash_value} not found in items dictionary")
                 continue
                 
             torrent_item: TorrentItem = self.__itemsDict[hash_value]
-            print(f"DEBUG - TORBOX ITEM - Found item: {torrent_item.raw_title}")
             
-            # Tous les torrents retournés par l'API TorBox sont considérés comme disponibles
-            torrent_item.availability = "TB"
-            
-            print(f"DEBUG - TORBOX SET - Set availability to TB for {torrent_item.raw_title}")
+            # Vérifier si le torrent est mis en cache ou non
+            cached = data.get("cached", False)
+            if cached:
+                torrent_item.availability = "TB+"
+            else:
+                torrent_item.availability = "TB-"
             
             # Mettre à jour les détails du fichier
             files = self._process_torbox_files(data["files"], torrent_item.type, media)
-            print(f"DEBUG - TORBOX FILES - Found {len(files)} matching files")
             self._update_file_details(torrent_item, files, debrid="TB")
         
-        # Ensuite, simuler des torrents non disponibles en utilisant les torrents qui n'ont pas été retournés par l'API TorBox
-        # Nous allons prendre les 5 premiers torrents qui ne sont pas dans la réponse TorBox
-        non_tb_count = 0
+        # Ensuite, marquer comme non disponibles tous les torrents qui n'ont pas été retournés par l'API TorBox
         for item in all_items:
-            if item.info_hash.lower() not in tb_hashes and non_tb_count < 5:
-                # Simuler un torrent non disponible
-                print(f"DEBUG - TORBOX SIMULATE NON-AVAILABLE - Simulating non-available torrent: {item.raw_title}")
-                item.availability = None  # Pas disponible, sera affiché avec la flèche bleue
-                non_tb_count += 1
-        
-        print(f"DEBUG - TORBOX COMPLETE - Update completed for all {torrent_count} torrents and simulated {non_tb_count} non-available torrents")
-
-        self.logger.info("TorrentSmartContainer: Torbox availability update completed")
+            if item.info_hash and item.info_hash.lower() not in tb_hashes:
+                # Marquer comme non disponible, sera affiché avec la flèche bleue
+                item.availability = None
 
     def _process_torbox_files(self, files, type, media):
         processed_files = []
