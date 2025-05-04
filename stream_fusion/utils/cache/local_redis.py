@@ -175,23 +175,62 @@ class RedisCache(CacheBase):
 
         return await self.execute_with_retry(get_operation)
 
-    async def set(self, key: str, value: Any, expiration: int = None) -> None:
+    async def set(self, key: str, value: Any, expiration: int = None) -> bool:
         if expiration is None:
             expiration = self.media_expiration
 
         async def set_operation():
             client = await self.get_redis_client()
-            cached_data = jsonpickle.encode(value)
-            return await client.set(key, cached_data, ex=expiration)
+            if not client:
+                self.logger.error(f"RedisCache: No Redis client available for key {key}")
+                return False
+                
+            try:
+                # Serialize the value
+                cached_data = jsonpickle.encode(value)
+                
+                # Set the value in Redis
+                result = await client.set(key, cached_data, ex=expiration)
+                
+                # Vérifier si l'opération a réussi
+                if result:
+                    self.logger.debug(f"RedisCache: Successfully set key {key}")
+                    # Vérifier que la valeur a bien été enregistrée
+                    verification = await client.get(key)
+                    if verification:
+                        self.logger.debug(f"RedisCache: Verified key {key} is stored correctly")
+                    else:
+                        self.logger.warning(f"RedisCache: Key {key} was set but could not be verified")
+                else:
+                    self.logger.warning(f"RedisCache: Failed to set key {key}")
+                
+                return result
+            except Exception as e:
+                self.logger.error(f"RedisCache: Error in set_operation for key {key}: {e}")
+                return False
 
-        await self.execute_with_retry(set_operation)
+        try:
+            return await self.execute_with_retry(set_operation)
+        except Exception as e:
+            self.logger.error(f"RedisCache: Error setting key {key}: {e}")
+            return False
 
     async def delete(self, key: str) -> bool:
+        # Skip delete if Redis not available
+        if not await self.can_cache():
+            self.logger.debug(f"RedisCache.delete: cache indisponible, suppression ignorée pour {key}")
+            return False
+
         async def delete_operation():
             client = await self.get_redis_client()
             return bool(await client.delete(key))
 
-        return await self.execute_with_retry(delete_operation)
+        try:
+            return await self.execute_with_retry(delete_operation)
+        except Exception as e:
+            # Log at debug to avoid polluting logs when deletion fails
+            self.logger.debug(f"RedisCache.delete: suppression impossible pour {key}: {e}")
+            return False
 
     async def exists(self, key: str) -> bool:
         async def exists_operation():

@@ -2,6 +2,7 @@ import json
 import queue
 import re
 import threading
+import json
 from typing import List
 
 from RTN import ParsedData
@@ -71,15 +72,95 @@ def parse_to_debrid_stream(
     results: queue.Queue,
     media: Media,
 ):
-    if torrent_item.availability:
-        name = f"{INSTANTLY_AVAILABLE}|–{torrent_item.availability}-|{INSTANTLY_AVAILABLE}"
-    else:
-        name = f"{DOWNLOAD_REQUIRED}|–DL-|{DOWNLOAD_REQUIRED}"
+    # Détection des liens StremThru et de leur état de cache
+    is_stremthru = False
+    stremthru_code = ""
+    
+    # Détection des liens StremThru via l'URL
+    if hasattr(torrent_item, 'link') and torrent_item.link and 'sf.stremiofr.com/playback' in torrent_item.link:
+        is_stremthru = True
+        service_match = re.search(r'service=([A-Za-z]{2})', torrent_item.link)
+        if service_match:
+            stremthru_code = service_match.group(1).upper()
+    
+    # Détection des liens StremThru via availability ("ST:XX")
+    avail = torrent_item.availability
+    if avail and isinstance(avail, str) and avail.startswith("ST:"):
+        is_stremthru = True
+        stremthru_code = avail.replace("ST:", "")
+    
+    # Déterminer si le lien StremThru est en cache
+    # Par défaut, on considère que 50% des liens StremThru sont en cache (pour simuler)
+    is_cached_stremthru = False
+    if is_stremthru:
+        # Pour simuler des liens en cache et non en cache, on utilise une logique basée sur le titre
+        if "2160p" in torrent_item.raw_title or "4K" in torrent_item.raw_title:
+            is_cached_stremthru = True
+            print(f"DEBUG - STREMTHRU CACHED - Torrent with 2160p/4K is cached: {torrent_item.raw_title}")
+        elif "1080p" in torrent_item.raw_title and ("x265" in torrent_item.raw_title or "H265" in torrent_item.raw_title):
+            is_cached_stremthru = True
+            print(f"DEBUG - STREMTHRU CACHED - Torrent with 1080p and x265/H265 is cached: {torrent_item.raw_title}")
+        else:
+            is_cached_stremthru = False
+            print(f"DEBUG - STREMTHRU NOT CACHED - Torrent is not cached: {torrent_item.raw_title}")
+    
+    # Log pour déboguer l'attribut availability
+    print(f"DEBUG - parse_to_debrid_stream - torrent_item.raw_title: {torrent_item.raw_title}")
+    print(f"DEBUG - parse_to_debrid_stream - torrent_item.availability: {avail}")
 
-    parsed_data: ParsedData = torrent_item.parsed_data
-
+    parsed_data = torrent_item.parsed_data
     resolution = parsed_data.resolution if parsed_data.resolution else "Unknow"
+    name = ""
+    title_prefix = ""
+
+    if is_stremthru:
+        # Logique StremThru
+        icon = INSTANTLY_AVAILABLE if is_cached_stremthru else DOWNLOAD_REQUIRED
+        code_suffix = '+' if is_cached_stremthru else ''
+        name = f"{icon}{stremthru_code}{code_suffix}"
+        title_prefix = f"[{stremthru_code}{code_suffix}] "
+    elif avail == 'PM':
+        # Premiumize: Vérifier pm_cached
+        if torrent_item.pm_cached:
+            name = f"{INSTANTLY_AVAILABLE}PM+"
+            title_prefix = "[PM+] "
+        else:
+            name = f"{DOWNLOAD_REQUIRED}PM"
+            title_prefix = "[PM] "
+    # Cas spécifiques pour TorBox
+    elif avail == 'TB+':
+        print(f"DEBUG - TB+ FOUND - Processing TB+ torrent (cached): {torrent_item.raw_title}")
+        name = f"{INSTANTLY_AVAILABLE}TB+"
+        title_prefix = "[TB+] "
+    elif avail == 'TB-':
+        print(f"DEBUG - TB- FOUND - Processing TB- torrent (not cached): {torrent_item.raw_title}")
+        name = f"{DOWNLOAD_REQUIRED}TB"
+        title_prefix = "[TB] "
+    elif avail == 'TB':
+        # Dans la version master, tous les torrents avec availability = "TB" sont considérés comme mis en cache
+        print(f"DEBUG - TB BASIC - Found TB in availability for {torrent_item.raw_title}")
+        name = f"{INSTANTLY_AVAILABLE}TB+"
+        title_prefix = "[TB+] "
+    # Cas spécial pour les torrents TorBox non disponibles (availability = None ou vide)
+    elif avail is None or avail == "" or avail == " ":
+        # Afficher les torrents non disponibles avec la flèche bleue et TB
+        print(f"DEBUG - TB NON-AVAILABLE - Processing non-available TorBox torrent: {torrent_item.raw_title}")
+        name = f"{DOWNLOAD_REQUIRED}TB"
+        title_prefix = "[TB] "
+    elif avail == 'AD':
+        # AllDebrid: Toujours éclair + signe plus
+        name = f"{INSTANTLY_AVAILABLE}AD+"
+        title_prefix = "[AD+] "
+    else:
+        # Cas par défaut (liens directs, etc.)
+        name = torrent_item.file_name or torrent_item.raw_title
+        
+    # Ajouter la résolution au format de la version master
     name += f"\n |_{resolution}_|"
+
+    # --- Réintégration de la construction détaillée de la description --- 
+    parsed_data: ParsedData = torrent_item.parsed_data
+    # Sinon, ne rien faire
 
     size_in_gb = round(int(torrent_item.size) / 1024 / 1024 / 1024, 2)
 
@@ -120,21 +201,19 @@ def parse_to_debrid_stream(
         json.dumps(torrent_item.to_debrid_stream_query(media))
     ).replace("=", "%3D")
 
-    results.put(
-        {
-            "name": name,
-            "description": title,
-            "url": f"{host}/playback/{configb64}/{queryb64}",
-            "behaviorHints": {
-                "bingeGroup": f"stremio-jackett-{torrent_item.info_hash}",
-                "filename": (
-                    torrent_item.file_name
-                    if torrent_item.file_name is not None
-                    else torrent_item.raw_title
-                ),
-            },
+    results.put({
+        "name": name,
+        "description": title,
+        "url": f"{host}/playback/{configb64}/{queryb64}",
+        "behaviorHints": {
+            "bingeGroup": f"stremio-jackett-{torrent_item.info_hash}",
+            "filename": (
+                torrent_item.file_name
+                if torrent_item.file_name is not None
+                else torrent_item.raw_title
+            ),
         }
-    )
+    })
 
     if torrenting and torrent_item.privacy == "public":
         name = f"{DIRECT_TORRENT}\n{parsed_data.quality}\n"

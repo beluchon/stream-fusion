@@ -26,11 +26,23 @@ class DebridService(str, enum.Enum):
     PM = "Premiumize"
 
 
-class NoCacheVideoLanguages(str, enum.Enum):
-    """Possible languages for which to not cache video results."""
+class ErrorVideoTypes(str, enum.Enum):
+    """Types de vidéos d'erreur disponibles."""
+    
+    DEFAULT = "/static/videos/fr_download_video.mp4"
+    ERROR = "/static/videos/error.mp4"
+    NOT_PREMIUM = "/static/videos/not_premium.mp4"
+    NOT_READY = "/static/videos/not_ready.mp4"
+    ACCESS_DENIED = "/static/videos/access_denied.mp4"
+    EXPIRED_API_KEY = "/static/videos/expired_api_key.mp4"
+    TWO_FACTOR_AUTH = "/static/videos/two_factor_auth.mp4"
 
-    FR = "https://github.com/LimeDrive/stream-fusion/raw/refs/heads/develop/stream_fusion/static/videos/fr_download_video.mp4"
-    EN = "https://github.com/LimeDrive/stream-fusion/raw/refs/heads/develop/stream_fusion/static/videos/en_download_video.mp4"
+
+class NoCacheVideoLanguages(str, enum.Enum):
+    """Languages for which to not cache video results."""
+
+    FR = "/static/videos/fr_download_video.mp4"
+    EN = "/static/videos/en_download_video.mp4"
 
     @classmethod
     def get_url(cls, language):
@@ -57,7 +69,6 @@ def check_env_variable(var_name):
 class Settings(BaseSettings):
     """Settings for the application"""
 
-    # STREAM-FUSION
     version_path: str = "/app/pyproject.toml"
     workers_count: int = get_default_worker_count()
     port: int = 8080
@@ -74,14 +85,9 @@ class Settings(BaseSettings):
     download_service: DebridService | None = None
     no_cache_video_language: NoCacheVideoLanguages = NoCacheVideoLanguages.FR
 
-    # PROXY
-    proxied_link: bool = check_env_variable("RD_TOKEN") or check_env_variable(
-        "AD_TOKEN"
-    )
+    proxied_link: bool = check_env_variable("RD_TOKEN") or check_env_variable("AD_TOKEN")
     proxy_url: str | URL | None = None
-    playback_proxy: bool | None = (
-        None  # If set, the link will be proxied through the given proxy.
-    )
+    playback_proxy: bool | None = None
     proxy_buffer_size: int = 1024 * 1024
 
     # REALDEBRID
@@ -111,14 +117,19 @@ class Settings(BaseSettings):
     pm_base_url: str = "https://www.premiumize.me/api"
 
     # LOGGING
-    log_level: LogLevel = LogLevel.INFO
-    log_path: str = "/app/config/logs/stream-fusion.log"
-    log_redacted: bool = True
+    log_level: LogLevel = Field(default=LogLevel.INFO)
+    log_to_file: bool = Field(default=False)
+    log_to_console: bool = Field(default=True)
+    log_file: str = Field(default="stream_fusion.log")
+    log_redacted: bool = Field(default=True)  # Masquer les informations sensibles dans les logs
+    log_path: str = Field(default="/app/config/logs/stream-fusion.log")  # Chemin du fichier de log
 
     # SECURITY
     secret_api_key: str | None = None
     security_hide_docs: bool = True
     allow_anonymous_access: bool = True  # Allow access without API key
+    playback_limit_requests: int = 20  # Limite de requêtes pour le playback
+    playback_limit_seconds: int = 60   # Période (en secondes) pour la limite de requêtes playback
 
     # POSTGRESQL_DB
     # TODO: Change the values, but break dev environment
@@ -176,6 +187,23 @@ class Settings(BaseSettings):
     dev_port: int = 8080
     develop: bool = False
     reload: bool = False
+
+    # STREMTHRU
+    stremthru_enabled: bool = False
+    stremthru_url: str = "https://stremthru.13377001.xyz/"
+    stremthru_store_auth: str | None = None
+
+    # DEBRIDLINK
+    debridlink_api_key: str | None = None
+
+    # EASYDEBRID
+    easydebrid_api_key: str | None = None
+
+    # OFFCLOUD
+    offcloud_credentials: str | None = None
+
+    # PIKPAK
+    pikpak_credentials: str | None = None
 
     @field_validator("proxy_url")
     @classmethod
@@ -259,6 +287,26 @@ class Settings(BaseSettings):
         Get the URL for the no-cache video based on the selected language.
         """
         return self.no_cache_video_language.value
+        
+    def get_error_video_url(self, error_type: str = None) -> str:
+        """
+        Get the URL for a specific error video.
+        
+        Args:
+            error_type: Type d'erreur ("not_premium", "not_ready", "access_denied", etc.)
+                        Si None, retourne la vidéo par défaut.
+        
+        Returns:
+            URL de la vidéo d'erreur correspondante
+        """
+        if not error_type:
+            return ErrorVideoTypes.DEFAULT.value
+            
+        try:
+            return getattr(ErrorVideoTypes, error_type.upper()).value
+        except (AttributeError, KeyError):
+            # Si le type d'erreur n'existe pas, retourne la vidéo d'erreur générale
+            return ErrorVideoTypes.ERROR.value
 
 
 try:

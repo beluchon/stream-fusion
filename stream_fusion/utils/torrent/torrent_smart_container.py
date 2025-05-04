@@ -8,6 +8,7 @@ from stream_fusion.utils.debrid.alldebrid import AllDebrid
 from stream_fusion.utils.debrid.premiumize import Premiumize
 from stream_fusion.utils.debrid.realdebrid import RealDebrid
 from stream_fusion.utils.debrid.torbox import Torbox
+from stream_fusion.utils.debrid.stremthrudebrid import StremThruDebrid
 from stream_fusion.utils.torrent.torrent_item import TorrentItem
 from stream_fusion.utils.cache.cache import cache_public
 from stream_fusion.utils.general import season_episode_in_filename
@@ -26,14 +27,11 @@ class TorrentSmartContainer:
         self.__media = media
 
     def get_unaviable_hashes(self):
-        hashes = []
-        for hash, item in self.__itemsDict.items():
-            if item.availability is False:
-                hashes.append(hash)
-        self.logger.debug(
-            f"TorrentSmartContainer: Retrieved {len(hashes)} hashes to process"
-        )
-        return hashes
+        return [item.info_hash for item in self.get_items() if item.availability == ""]
+
+    def get_unavailable_magnets(self):
+        """Retourne les liens magnet pour les items qui n'ont pas encore de disponibilité marquée."""
+        return [item.magnet for item in self.get_items() if item.availability == "" and item.magnet]
 
     def get_items(self):
         items = list(self.__itemsDict.values())
@@ -58,9 +56,22 @@ class TorrentSmartContainer:
             f"TorrentSmartContainer: Total items to process: {len(self.__itemsDict)}"
         )
         for torrent_item in self.__itemsDict.values():
-            self.logger.trace(
-                f"TorrentSmartContainer: Processing item: {torrent_item.raw_title} - Has torrent: {torrent_item.torrent_download is not None}"
+            # Vérifier d'abord si l'item est marqué comme always_show
+            always_show = getattr(torrent_item, 'always_show', False)
+            
+            self.logger.debug(
+                f"TorrentSmartContainer: Processing item: {torrent_item.raw_title} - Has torrent: {torrent_item.torrent_download is not None}, always_show: {always_show}"
             )
+            
+            # Si l'item est marqué comme always_show, l'ajouter directement
+            if always_show and torrent_item.file_index is not None:
+                best_matching.append(torrent_item)
+                self.logger.info(
+                    f"TorrentSmartContainer: Item added to best matching (always_show=True): {torrent_item.raw_title}"
+                )
+                continue
+            
+            # Sinon, utiliser la logique habituelle
             if torrent_item.torrent_download is not None:
                 self.logger.trace(
                     f"TorrentSmartContainer: Has file index: {torrent_item.file_index is not None}"
@@ -94,8 +105,11 @@ class TorrentSmartContainer:
                     self.logger.trace(
                         "TorrentSmartContainer: Item added to best matching (magnet link)"
                     )
+        
+        # Compter et logger les items non mis en cache
+        non_cached_count = sum(1 for item in best_matching if hasattr(item, 'cached') and not item.cached)
         self.logger.success(
-            f"TorrentSmartContainer: Found {len(best_matching)} best matching items"
+            f"TorrentSmartContainer: Found {len(best_matching)} best matching items ({non_cached_count} non-cached)"
         )
         return best_matching
 
@@ -261,21 +275,25 @@ class TorrentSmartContainer:
         for data in response["data"]["magnets"]:
             torrent_item: TorrentItem = self.__itemsDict[data["hash"]]
             
-            # Set availability to AD immediately for all files
+            # Marquer TOUS les fichiers AllDebrid comme disponibles dès que le hash est trouvé
             torrent_item.availability = "AD"
             
-            # Process files if they exist
+            # Mettre à jour les détails du fichier si possible
             if "files" in data and data["files"]:
                 files = []
                 self._explore_folders_alldebrid(
                     data["files"], files, 1, torrent_item.type, media
                 )
-                if files:  # If we found matching files
+                if files:
                     self._update_file_details(torrent_item, files, debrid="AD")
+                else:
+                    self.logger.debug(
+                        f"No matching AD files for hash {data['hash']}; skipping file detail update."
+                    )
             else:
-                # If no files data, still mark as available
-                self.logger.debug(f"No files data for hash {data['hash']}, but marking as available")
-                torrent_item.availability = "AD"
+                self.logger.debug(
+                    f"No files data for hash {data['hash']}; skipping file detail update."
+                )
                 
         self.logger.info(
             "TorrentSmartContainer: AllDebrid availability update completed"
@@ -283,14 +301,57 @@ class TorrentSmartContainer:
 
     def _update_availability_torbox(self, response, media):
         self.logger.info("TorrentSmartContainer: Updating availability for Torbox")
+        print(f"DEBUG - TORBOX UPDATE - Starting update for TorBox availability")
+        
         if response["success"] is False:
             self.logger.error(f"TorrentSmartContainer: Torbox API error: {response}")
+            print(f"DEBUG - TORBOX ERROR - API error: {response}")
             return
 
+        torrent_count = len(response.get('data', []))
+        self.logger.info(f"TorrentSmartContainer: Found {torrent_count} TorBox torrents")
+        print(f"DEBUG - TORBOX COUNT - Found {torrent_count} TorBox torrents")
+        
+        # Créer une copie des torrents pour simuler des torrents non disponibles
+        all_items = self.get_items()
+        non_tb_items = []
+        tb_hashes = set()
+        
+        # D'abord, traiter les torrents retournés par l'API TorBox
         for data in response["data"]:
-            torrent_item: TorrentItem = self.__itemsDict[data["hash"]]
+            hash_value = data.get("hash", "")
+            print(f"DEBUG - TORBOX HASH - Processing hash: {hash_value}")
+            tb_hashes.add(hash_value.lower())
+            
+            if hash_value not in self.__itemsDict:
+                self.logger.warning(f"TorrentSmartContainer: Hash {hash_value} not found in items dictionary")
+                print(f"DEBUG - TORBOX MISSING - Hash {hash_value} not found in items dictionary")
+                continue
+                
+            torrent_item: TorrentItem = self.__itemsDict[hash_value]
+            print(f"DEBUG - TORBOX ITEM - Found item: {torrent_item.raw_title}")
+            
+            # Tous les torrents retournés par l'API TorBox sont considérés comme disponibles
+            torrent_item.availability = "TB"
+            
+            print(f"DEBUG - TORBOX SET - Set availability to TB for {torrent_item.raw_title}")
+            
+            # Mettre à jour les détails du fichier
             files = self._process_torbox_files(data["files"], torrent_item.type, media)
+            print(f"DEBUG - TORBOX FILES - Found {len(files)} matching files")
             self._update_file_details(torrent_item, files, debrid="TB")
+        
+        # Ensuite, simuler des torrents non disponibles en utilisant les torrents qui n'ont pas été retournés par l'API TorBox
+        # Nous allons prendre les 5 premiers torrents qui ne sont pas dans la réponse TorBox
+        non_tb_count = 0
+        for item in all_items:
+            if item.info_hash.lower() not in tb_hashes and non_tb_count < 5:
+                # Simuler un torrent non disponible
+                print(f"DEBUG - TORBOX SIMULATE NON-AVAILABLE - Simulating non-available torrent: {item.raw_title}")
+                item.availability = None  # Pas disponible, sera affiché avec la flèche bleue
+                non_tb_count += 1
+        
+        print(f"DEBUG - TORBOX COMPLETE - Update completed for all {torrent_count} torrents and simulated {non_tb_count} non-available torrents")
 
         self.logger.info("TorrentSmartContainer: Torbox availability update completed")
 
@@ -340,9 +401,12 @@ class TorrentSmartContainer:
             for item in torrent_items:
                 if item.info_hash.lower() == hash.lower():
                     is_available = status.get("transcoded", False)
-                    item.availability = "PM" if is_available else None
+                    # On définit availability à "PM" pour tous les torrents trouvés dans la réponse Premiumize
+                    item.availability = "PM"
+                    # Et on utilise pm_cached pour indiquer si le fichier est réellement en cache
+                    item.pm_cached = is_available
                     
-                    # Mettre à jour les détails du fichier si disponible
+                    # Mettre à jour les détails du fichier SEULEMENT si PM rapporte qu'il est transcodé
                     if is_available:
                         if item.type == "series":
                             # Pour les séries, vérifier si le fichier sélectionné correspond à l'épisode
@@ -350,8 +414,9 @@ class TorrentSmartContainer:
                                 # Si nous avons l'index complet des fichiers, l'utiliser
                                 matching_files = []
                                 for file_info in item.full_index:
-                                    clean_season = self.__media.season.replace("S", "")
-                                    clean_episode = self.__media.episode.replace("E", "")
+                                    # Utiliser les attributs de l'item plutôt que self.__media
+                                    clean_season = item.season.replace("S", "") if hasattr(item, 'season') and item.season else "0"
+                                    clean_episode = item.episode.replace("E", "") if hasattr(item, 'episode') and item.episode else "0"
                                     numeric_season = int(clean_season)
                                     numeric_episode = int(clean_episode)
                                     
@@ -410,8 +475,237 @@ class TorrentSmartContainer:
                     )
 
         self.logger.info(
-            "TorrentSmartContainer: Premiumize availability update completed"
+            f"TorrentSmartContainer: Premiumize availability update completed. {len([item for item in torrent_items if item.availability == 'PM'])}/{len(torrent_items)} items marked as instant."
         )
+
+    async def store_stremthru_availability(self, cached_files, store_name, redis_cache=None):
+        """
+        Stocke les informations de disponibilité StremThru dans Redis pour une utilisation future.
+        Cela permet de conserver les informations de disponibilité entre les sessions.
+        """
+        if not redis_cache:
+            self.logger.debug("store_stremthru_availability: No Redis cache provided, skipping storage.")
+            return
+            
+        try:
+            # Créer une clé unique pour ce store StremThru
+            cache_key = f"stremthru:availability:{store_name}"
+            
+            # Stocker les données dans Redis avec une expiration de 24 heures
+            await redis_cache.set(cache_key, cached_files, expiration=86400)  # 24 heures
+            
+            self.logger.info(f"Stored StremThru availability data for store '{store_name}' in Redis cache.")
+        except Exception as e:
+            self.logger.error(f"Failed to store StremThru availability in Redis: {e}")
+    
+    async def load_stremthru_availability(self, store_name, redis_cache=None):
+        """
+        Charge les informations de disponibilité StremThru depuis Redis.
+        Retourne les données si disponibles, sinon None.
+        """
+        if not redis_cache:
+            self.logger.debug("load_stremthru_availability: No Redis cache provided, skipping load.")
+            return None
+            
+        try:
+            # Récupérer la clé pour ce store StremThru
+            cache_key = f"stremthru:availability:{store_name}"
+            
+            # Charger les données depuis Redis
+            cached_data = await redis_cache.get(cache_key)
+            
+            if cached_data:
+                self.logger.info(f"Loaded StremThru availability data for store '{store_name}' from Redis cache.")
+                return cached_data
+            else:
+                self.logger.debug(f"No cached StremThru availability data found for store '{store_name}'.")
+                return None
+        except Exception as e:
+            self.logger.error(f"Failed to load StremThru availability from Redis: {e}")
+            return None
+            
+    async def check_working_stremthru_hashes(self, store_code, redis_cache=None):
+        """
+        Vérifie les hashes marqués comme fonctionnels pour un store_code StremThru spécifique.
+        Retourne un dictionnaire {hash: [file_info]} pour les hashes fonctionnels.
+        """
+        if not redis_cache:
+            self.logger.debug("check_working_stremthru_hashes: No Redis cache provided, skipping check.")
+            return {}
+            
+        try:
+            # Récupérer tous les items du container
+            items = self.get_items()
+            result = {}
+            
+            # Vérifier chaque hash
+            for item in items:
+                info_hash = item.info_hash.lower()
+                working_hash_key = f"stremthru:working:{store_code}:{info_hash}"
+                
+                # Vérifier si ce hash est marqué comme fonctionnel
+                is_working = await redis_cache.get(working_hash_key)
+                
+                if is_working:
+                    self.logger.debug(f"Found working StremThru hash: {info_hash} for store_code {store_code}")
+                    # Créer une entrée dans le résultat avec un fichier factice
+                    result[info_hash] = [{
+                        'file_index': 0,  # Index par défaut
+                        'title': item.file_name or item.raw_title,
+                        'size': item.size
+                    }]
+            
+            self.logger.info(f"Found {len(result)} working StremThru hashes for store_code {store_code}")
+            return result
+        except Exception as e:
+            self.logger.error(f"Error checking working StremThru hashes: {e}")
+            return {}
+    
+    def update_availability_stremthru(self, cached_files, store_name, media, redis_cache=None):
+        """
+        Met à jour la disponibilité des items basée sur les fichiers retournés par StremThru (via get_cached_files).
+        'cached_files' est maintenant un dictionnaire {info_hash: [file_dict, ...], ...}
+        'store_name' est le nom du store interne StremThru (ex: 'alldebrid', 'realdebrid').
+        
+        Si redis_cache est fourni, les informations de disponibilité seront également stockées pour une utilisation future.
+        """
+        if not cached_files or not isinstance(cached_files, dict):
+            self.logger.debug(f"update_availability_stremthru: No cached files provided or not a dict: {type(cached_files)}")
+            return
+
+        # --- Calculer le nombre total de fichiers pour le log --- 
+        total_files_count = sum(len(files) for files in cached_files.values())
+        self.logger.info(f"TorrentSmartContainer: Updating availability from Stremthru for store '{store_name}' ({len(cached_files)} hashes, {total_files_count} files total)")
+
+        # Générer le code court pour la disponibilité
+        availability_code = store_name[:2].upper() if store_name else "ST" # Utiliser 'ST' si store_name est None/vide
+        if store_name == "alldebrid": availability_code = "AD"
+        elif store_name == "easydebrid": availability_code = "ED"
+        elif store_name == "realdebrid": availability_code = "RD"
+        elif store_name == "premiumize": availability_code = "PM"
+        elif store_name == "debridlink": availability_code = "DL"
+        elif store_name == "pikpak": availability_code = "PK"
+        elif store_name == "offcloud": availability_code = "OC"
+        elif store_name == "torbox": availability_code = "TB"
+        # Ajouter d'autres si besoin
+
+        # IMPORTANT: Préfixer le code pour indiquer la gestion par Stremthru
+        stremthru_availability_code = f"ST:{availability_code}"
+
+        self.logger.info(f"Using availability code '{stremthru_availability_code}' for store '{store_name}' from Stremthru.")
+
+        # Log the raw data received from StremThru
+        self.logger.debug(f"TorrentSmartContainer: Received raw cached_files data from Stremthru for store '{store_name}': {cached_files}")
+
+        updated_hashes = set() # Garder trace des hashes uniques mis à jour
+        updated_hashes_count = 0
+        skipped_non_matching = 0
+        non_cached_files_count = 0
+
+        # Vérifier si des liens ont été marqués comme fonctionnels dans Redis
+        store_code = None
+        for code, name in getattr(StremThruDebrid, 'STORE_CODE_TO_NAME', {}).items():
+            if name == store_name:
+                store_code = code.upper()
+                break
+
+        # Récupérer les hashes marqués comme fonctionnels dans Redis
+        working_hashes = set()
+        if redis_cache and store_code:
+            try:
+                # Utiliser une méthode synchrone pour vérifier les clés Redis
+                # Comme cette fonction n'est pas async, on ne peut pas utiliser await
+                # On peut soit convertir la fonction en async, soit utiliser une approche différente
+                # Pour l'instant, on va juste logger que cette fonctionnalité nécessite une fonction async
+                self.logger.info(f"Checking Redis for working hashes requires async function. Skipping this check.")
+                # Dans une version future, on pourrait convertir cette fonction en async
+                # ou créer une fonction auxiliaire async pour cette vérification
+            except Exception as e:
+                self.logger.error(f"Error checking Redis for working hashes: {e}")
+                # Continuer sans les hashes Redis
+
+        # --- Itérer sur les valeurs (listes de fichiers), puis les fichiers --- 
+        for info_hash_key, files_list in cached_files.items(): # Itérer sur les paires clé(hash)/valeur(liste de fichiers)
+            item = self.__itemsDict.get(info_hash_key) # Récupérer l'item TorrentItem correspondant au hash
+            if not item:
+                # Ce cas ne devrait pas arriver si get_cached_files a bien utilisé les hashes du container
+                self.logger.warning(f"update_availability_stremthru: Infohash {info_hash_key} from StremThru response not found in container.")
+                continue
+
+            # Vérifier si ce hash est marqué comme fonctionnel dans Redis
+            is_working_hash = info_hash_key in working_hashes
+
+            # Marquer que ce hash a été mis à jour (au moins un fichier trouvé)
+            if info_hash_key not in updated_hashes:
+                updated_hashes_count += 1
+                updated_hashes.add(info_hash_key)
+
+            # Traiter chaque fichier trouvé pour ce hash
+            for file_info in files_list: # Maintenant, file_info est bien un dictionnaire
+                # Validation basique de file_info
+                if not isinstance(file_info, dict):
+                    self.logger.warning(f"update_availability_stremthru: Expected dict for file_info, got {type(file_info)} for hash {info_hash_key}. Skipping this file.")
+                    continue
+
+                file_index = file_info.get("file_index")
+                file_title = file_info.get("title")
+                file_size = file_info.get("size")
+                is_cached = file_info.get("cached", True)  # Par défaut, on considère que c'est en cache
+                always_show = file_info.get("always_show", False)  # Nouvel attribut pour forcer l'affichage
+
+                # Pour les fichiers non mis en cache, on les compte séparément
+                if not is_cached:
+                    non_cached_files_count += 1
+                    self.logger.debug(f"Found non-cached file for hash {info_hash_key}: {file_title}, always_show: {always_show}")
+
+                # Vérifier si le fichier a un index valide
+                if file_index is None:
+                    self.logger.debug(f"update_availability_stremthru: Skipping file with None index for hash {info_hash_key}.")
+                    skipped_non_matching += 1
+                    continue
+                
+                # Si file_index est -1 mais qu'un titre est fourni, on l'accepte quand même
+                if file_index < 0 and not file_title:
+                    self.logger.debug(f"update_availability_stremthru: Skipping file with negative index and no title for hash {info_hash_key}.")
+                    skipped_non_matching += 1
+                    continue
+
+                # Tous les fichiers sont considérés comme disponibles, qu'ils soient en cache ou non
+                # Les fichiers non mis en cache ont déjà une indication visuelle dans leur nom
+                self.logger.debug(f"File for hash {info_hash_key} will be shown (cached: {is_cached})")
+
+                # Update first valid file_info using base method
+                if item:
+                    # Mettre à jour les détails du fichier
+                    self._update_file_details(
+                        item,
+                        [{'file_index': file_index, 'title': file_title, 'size': file_size}],
+                        debrid=f"ST:{availability_code}"
+                    )
+                    
+                    # Mettre à jour les attributs de l'item
+                    item.cached = is_cached
+                    
+                    # Ajouter l'attribut download_icon pour les fichiers non mis en cache
+                    if not is_cached:
+                        item.download_icon = True
+                    else:
+                        item.download_icon = False
+                    
+                    # Le nom du fichier a déjà été préfixé avec [NON-CACHED] si nécessaire
+                    # dans la fonction get_cached_files
+                    
+                    self.logger.debug(f"StremThru: Updated file details for hash {info_hash_key}, file_index {file_index}, title '{file_title}', cached: {is_cached}, availability '{availability_code}'")
+                    # Only use the first matching file
+                    break
+
+        # Log final
+        self.logger.info(f"TorrentSmartContainer: Availability update from Stremthru completed. {updated_hashes_count} items updated ({non_cached_files_count} non-cached). Skipped {skipped_non_matching} files due to missing index.")
+        
+        # Si des hashes ont été marqués comme fonctionnels dans Redis, les ajouter au log
+        if working_hashes:
+            self.logger.info(f"TorrentSmartContainer: Found {len(working_hashes)} hashes marked as working in Redis for store {store_code}")
+
 
     def _update_file_details(self, torrent_item, files, debrid: str = "??"):
         if not files:

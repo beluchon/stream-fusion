@@ -22,27 +22,37 @@ class TMDB(MetadataProvider):
 
             if lang == self.config['languages'][0]:
                 if type == "movie":
-                    result = Movie(
-                        id=id,
-                        tmdb_id=data["movie_results"][0]["id"],
-                        titles=[self.replace_weird_characters(data["movie_results"][0]["title"])],
-                        year=data["movie_results"][0]["release_date"][:4],
-                        languages=self.config['languages']
-                    )
+                    if data.get("movie_results") and data["movie_results"]:
+                        result = Movie(
+                            id=id,
+                            tmdb_id=data["movie_results"][0]["id"],
+                            titles=[self.replace_weird_characters(data["movie_results"][0]["title"])],
+                            year=data["movie_results"][0]["release_date"][:4],
+                            languages=self.config['languages']
+                        )
+                    else:
+                        logger.warning(f"No movie results found on TMDB for {id}")
+                        return None
                 else:
-                    result = Series(
-                        id=id,
-                        tmdb_id = data["tv_results"][0]["id"],
-                        titles=[self.replace_weird_characters(data["tv_results"][0]["name"])],
-                        season="S{:02d}".format(int(full_id[1])),
-                        episode="E{:02d}".format(int(full_id[2])),
-                        languages=self.config['languages']
-                    )
+                    if data.get("tv_results") and data["tv_results"]:
+                        result = Series(
+                            id=id,
+                            tmdb_id = data["tv_results"][0]["id"],
+                            titles=[self.replace_weird_characters(data["tv_results"][0]["name"])],
+                            season="S{:02d}".format(int(full_id[1])),
+                            episode="E{:02d}".format(int(full_id[2])),
+                            languages=self.config['languages']
+                        )
+                    else:
+                        logger.warning(f"No TV results found on TMDB for {id}")
+                        return None
             else:
                 if type == "movie":
-                    result.titles.append(self.replace_weird_characters(data["movie_results"][0]["title"]))
+                    if data.get("movie_results") and data["movie_results"]:
+                        result.titles.append(self.replace_weird_characters(data["movie_results"][0]["title"]))
                 else:
-                    result.titles.append(self.replace_weird_characters(data["tv_results"][0]["name"]))
+                    if data.get("tv_results") and data["tv_results"]:
+                        result.titles.append(self.replace_weird_characters(data["tv_results"][0]["name"]))
 
         self.logger.info("Got metadata for " + type + " with id " + id)
         return result
