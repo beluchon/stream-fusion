@@ -77,7 +77,16 @@ class AllDebrid(BaseDebrid):
             # Ensure status_data and nested keys exist before accessing
             if status_data and 'data' in status_data and 'magnets' in status_data['data'] and 'status' in status_data['data']['magnets']:
                  return status_data["data"]["magnets"]["status"] == "Ready"
-            logger.warning(f"Unexpected structure in check_magnet_status response: {status_data}")
+            
+            # Limiter la taille des logs en ne montrant que les clés principales
+            log_data = "<structure complexe>"
+            if status_data:
+                if isinstance(status_data, dict):
+                    log_data = f"Clés principales: {list(status_data.keys())}"
+                else:
+                    log_data = f"Type inattendu: {type(status_data)}"
+            
+            logger.warning(f"Unexpected structure in check_magnet_status response: {log_data}")
             return False
 
         # Pass the async helper function to wait_for_ready_status
