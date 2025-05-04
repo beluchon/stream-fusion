@@ -133,7 +133,12 @@ def parse_to_debrid_stream(
         # In the master version, all torrents with availability = "TB" are considered cached
         name = f"{INSTANTLY_AVAILABLE}TB+"
         title_prefix = "[TB+] "
-    # Special case for unavailable TorBox torrents (availability = None or empty)
+    # Special case for unavailable TorBox torrents (availability = None)
+    elif avail is None:
+        # Si c'est un torrent Torbox (ou traité par Torbox), on affiche la flèche bleue
+        name = f"{DOWNLOAD_REQUIRED}TB"
+        title_prefix = "[TB] "
+    # Fallback for other TorBox torrents with empty availability
     elif torrent_item.indexer and "torbox" in torrent_item.indexer.lower():
         name = f"{DOWNLOAD_REQUIRED}TB"
         title_prefix = "[TB] "
