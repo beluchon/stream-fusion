@@ -97,28 +97,95 @@ def get_download_service(config):
         target_service_name = settings.download_service
 
     if not target_service_name:
-         logger.error("Impossible de déterminer le service de téléchargement cible.")
-         raise HTTPException(status_code=500, detail="Impossible de déterminer le service de téléchargement.")
+        logger.error("Unable to determine target download service.")
+        raise HTTPException(status_code=500, detail="Unable to determine download service.")
 
+    # Check if we have a valid token for the requested service
+    # If not, try to find an alternative service with a valid token
+    # A token is considered valid if it exists and is not empty
+    # Handle tokens that can be strings or dictionaries
+    def is_valid_token(token):
+        if not token:
+            return False
+        if isinstance(token, dict):
+            # For dictionary tokens (like RDToken), check if they contain access_token
+            return bool(token.get('access_token'))
+        if isinstance(token, str):
+            return bool(token.strip())
+        return bool(token)  # For any other type
+    
+    has_rd_token = is_valid_token(config.get('RDToken'))
+    has_ad_token = is_valid_token(config.get('ADToken'))
+    has_pm_token = is_valid_token(config.get('PMToken'))
+    has_tb_token = is_valid_token(config.get('TBToken'))
+    
+    # Special check for Premiumize - if the token exists but we know it's invalid
+    # (for example due to previous errors), consider it invalid
+    if has_pm_token and target_service_name == "Premiumize" and config.get('PMToken', '') == "9e0eff5a-8950-4585-8707-0640b2a0b217":
+        logger.warning("Premiumize token detected but known to be invalid. Looking for an alternative service...")
+        has_pm_token = False
+    
+    # If the target service doesn't have a valid token, look for an alternative service
+    if (target_service_name == "Real-Debrid" and not has_rd_token) or \
+       (target_service_name == "AllDebrid" and not has_ad_token) or \
+       (target_service_name == "Premiumize" and not has_pm_token) or \
+       (target_service_name == "TorBox" and not has_tb_token):
+        
+        logger.warning(f"No valid token for {target_service_name}, looking for an alternative service...")
+        
+        # Look for a service with a valid token
+        if has_tb_token:
+            logger.info(f"TorBox token found. Using TorBox instead of {target_service_name}.")
+            target_service_name = "TorBox"
+        elif has_rd_token:
+            logger.info(f"Real-Debrid token found. Using Real-Debrid instead of {target_service_name}.")
+            target_service_name = "Real-Debrid"
+        elif has_ad_token:
+            logger.info(f"AllDebrid token found. Using AllDebrid instead of {target_service_name}.")
+            target_service_name = "AllDebrid"
+        elif has_pm_token:
+            logger.info(f"Premiumize token found. Using Premiumize instead of {target_service_name}.")
+            target_service_name = "Premiumize"
+    
     logger.debug(f"Service de téléchargement cible déterminé: {target_service_name}")
 
     # Use StremThru if enabled, otherwise fall back to direct service
     if config.get("stremthru_enabled", False):
-        logger.info(f"StremThru activé. Utilisation de StremThruDebrid pour '{target_service_name}'.")
-        return StremThruDebrid(config)
-
-    logger.info(f"StremThru désactivé. Utilisation du client direct pour '{target_service_name}'.")
+        logger.info(f"StremThru enabled. Using StremThruDebrid for '{target_service_name}'.") 
+        stremthru = StremThruDebrid(config)
+        
+        # Set the store code based on the target service
+        if target_service_name == "Real-Debrid":
+            stremthru.store_code = "rd"
+        elif target_service_name == "AllDebrid":
+            stremthru.store_code = "ad"
+        elif target_service_name == "Premiumize":
+            stremthru.store_code = "pm"
+        elif target_service_name == "TorBox":
+            stremthru.store_code = "tb"
+        
+        logger.debug(f"StremThruDebrid: store_code set to '{stremthru.store_code}' for service '{target_service_name}'")
+        return stremthru
+        
+    # Direct service instantiation
     if target_service_name == "Real-Debrid":
+        from stream_fusion.utils.debrid.realdebrid import RealDebrid
         return RealDebrid(config)
     elif target_service_name == "AllDebrid":
+        from stream_fusion.utils.debrid.alldebrid import AllDebrid
         return AllDebrid(config)
-    elif target_service_name == "TorBox":
-        return Torbox(config)
     elif target_service_name == "Premiumize":
+        from stream_fusion.utils.debrid.premiumize import Premiumize
         return Premiumize(config)
+    elif target_service_name == "TorBox":
+        from stream_fusion.utils.debrid.torbox import Torbox
+        return Torbox(config)
+    elif target_service_name == "StremThru":
+        from stream_fusion.utils.debrid.stremthrudebrid import StremThruDebrid
+        return StremThruDebrid(config)
     else:
-        logger.error(f"Service de téléchargement invalide spécifié: {target_service_name}")
-        raise HTTPException(status_code=500, detail=f"Invalid download service: {target_service_name}.")
+        logger.error(f"Unsupported download service: {target_service_name}")
+        raise HTTPException(status_code=500, detail=f"Unsupported download service: {target_service_name}")
 
 SERVICE_MAP = {
     "RD": "Real-Debrid",
@@ -165,27 +232,45 @@ def get_debrid_service(config, service_short_code, request: Request):
          return get_download_service(config)
     elif service_short_code in SERVICE_MAP:
         target_service_name = SERVICE_MAP[service_short_code]
-        logger.debug(f"get_debrid_service: Service demandé '{service_short_code}' mappé à '{target_service_name}'.")
+        logger.debug(f"get_debrid_service: Requested service '{service_short_code}' mapped to '{target_service_name}'.")
     else:
-        logger.warning(f"get_debrid_service: Code de service inconnu '{service_short_code}'.")
+        logger.warning(f"get_debrid_service: Unknown service code '{service_short_code}'.")
         raise HTTPException(status_code=400, detail=f"Unknown service code: {service_short_code}")
 
-    # Use StremThru proxy for all services if enabled
-    if config.get('stremthru_enabled', False):
-        logger.info(f"StremThru activé. Délégation de '{target_service_name}' au client StremThru.")
-        return StremThruDebrid(config, session=http_session)
+    # Check if StremThru is enabled and configured
+    if config.get('stremthru_enabled', False) and config.get('stremthru_url'):
+        logger.info(f"StremThru enabled. Using StremThru as a proxy for '{target_service_name}'.")
+        from stream_fusion.utils.debrid.stremthrudebrid import StremThruDebrid
+        
+        # Create a StremThruDebrid instance
+        stremthru = StremThruDebrid(config, session=http_session)
+        
+        # Set the store_code based on the target service
+        if target_service_name == "Real-Debrid":
+            stremthru.store_code = "rd"
+        elif target_service_name == "AllDebrid":
+            stremthru.store_code = "ad"
+        elif target_service_name == "Premiumize":
+            stremthru.store_code = "pm"
+        elif target_service_name == "TorBox":
+            stremthru.store_code = "tb"
+            
+        logger.debug(f"StremThruDebrid: store_code set to '{stremthru.store_code}' for service '{target_service_name}'")
+        return stremthru
 
-    # Fallback: direct service instantiation
-    service_map = {
-        "real-debrid": RealDebrid,
-        "alldebrid": AllDebrid,
-        "torbox": Torbox,
-        "premiumize": Premiumize
-    }
-    normalized = normalize_service_name(target_service_name)
-    if normalized in service_map:
-        cls = service_map[normalized]
-        return cls(config, session=http_session)
+    logger.info(f"StremThru disabled. Using direct client for '{target_service_name}'.")
+    if target_service_name == "Real-Debrid":
+        from stream_fusion.utils.debrid.realdebrid import RealDebrid
+        return RealDebrid(config, session=http_session)
+    elif target_service_name == "AllDebrid":
+        from stream_fusion.utils.debrid.alldebrid import AllDebrid
+        return AllDebrid(config, session=http_session)
+    elif target_service_name == "TorBox":
+        from stream_fusion.utils.debrid.torbox import Torbox
+        return Torbox(config, session=http_session)
+    elif target_service_name == "Premiumize":
+        from stream_fusion.utils.debrid.premiumize import Premiumize
+        return Premiumize(config, session=http_session)
     else:
-        logger.error(f"Service Debrid invalide spécifié: {target_service_name}")
-        raise HTTPException(status_code=400, detail=f"Unsupported debrid service: {target_service_name}")
+        logger.error(f"Invalid download service specified: {target_service_name}")
+        raise HTTPException(status_code=500, detail=f"Invalid download service: {target_service_name}.")

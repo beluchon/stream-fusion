@@ -35,12 +35,25 @@ class TMDB(MetadataProvider):
                         return None
                 else:
                     if data.get("tv_results") and data["tv_results"]:
+                        # Vérifier si la saison et l'épisode sont spécifiés dans l'ID
+                        season = "S01"  # Valeur par défaut
+                        episode = "E01"  # Valeur par défaut
+                        
+                        # Si le format est id:saison:episode
+                        if len(full_id) > 1:
+                            try:
+                                season = "S{:02d}".format(int(full_id[1]))
+                                if len(full_id) > 2:
+                                    episode = "E{:02d}".format(int(full_id[2]))
+                            except (ValueError, IndexError) as e:
+                                logger.warning(f"Erreur lors du traitement de la saison/épisode pour {id}: {e}")
+                        
                         result = Series(
                             id=id,
                             tmdb_id = data["tv_results"][0]["id"],
                             titles=[self.replace_weird_characters(data["tv_results"][0]["name"])],
-                            season="S{:02d}".format(int(full_id[1])),
-                            episode="E{:02d}".format(int(full_id[2])),
+                            season=season,
+                            episode=episode,
                             languages=self.config['languages']
                         )
                     else:

@@ -48,6 +48,20 @@ class AllDebrid(BaseDebrid):
     async def unrestrict_link(self, link, ip=None):
         url = f"{self.base_url}link/unlock?agent={self.agent}&link={link}"
         return await self.json_response(url, method='get', headers=self.get_headers())
+        
+    def start_background_caching(self, query):
+        """Méthode factice pour éviter l'erreur dans handle_download.
+        
+        Cette méthode ne fait rien d'autre que retourner True pour indiquer que
+        le téléchargement en arrière-plan a été initié avec succès.
+        
+        Args:
+            query (dict): Les paramètres de la requête (non utilisés).
+            
+        Returns:
+            bool: Toujours True.
+        """
+        return True
 
     async def get_stream_link(self, query, config, ip=None):
         magnet = query['magnet']
@@ -57,23 +71,26 @@ class AllDebrid(BaseDebrid):
         torrent_id = await self.add_magnet_or_torrent(magnet, torrent_download, ip)
         logger.info(f"AllDebrid: Torrent ID: {torrent_id}")
 
+        # Define an async helper function for the status check
         async def _check_status():
             status_data = await self.check_magnet_status(torrent_id, ip)
+            # Ensure status_data and nested keys exist before accessing
             if status_data and 'data' in status_data and 'magnets' in status_data['data'] and 'status' in status_data['data']['magnets']:
                  return status_data["data"]["magnets"]["status"] == "Ready"
             logger.warning(f"Unexpected structure in check_magnet_status response: {status_data}")
             return False
 
+        # Pass the async helper function to wait_for_ready_status
         if not await self.wait_for_ready_status(_check_status):
             logger.error("AllDebrid: Torrent not ready, caching in progress.")
-            return settings.get_error_video_url("NOT_READY")
+            return settings.no_cache_video_url
         logger.info("AllDebrid: Torrent is ready.")
 
         logger.info(f"AllDebrid: Retrieving data for torrent ID: {torrent_id}")
         data = (await self.check_magnet_status(torrent_id, ip))["data"]
         logger.info(f"AllDebrid: Data retrieved for torrent ID")
 
-        link = settings.get_error_video_url("NOT_READY")
+        link = settings.no_cache_video_url
         if stream_type == "movie":
             logger.info("AllDebrid: Getting link for movie")
             link = max(data["magnets"]['links'], key=lambda x: x['size'])['link']

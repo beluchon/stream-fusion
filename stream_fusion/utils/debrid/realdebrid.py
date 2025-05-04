@@ -127,13 +127,13 @@ class RealDebrid(BaseDebrid):
             time.sleep(interval)
         return None
 
-    def get_availability_bulk(self, hashes_or_magnets):
+    async def get_availability_bulk(self, hashes_or_magnets, media=None):
         self._torrent_rate_limit()
         if len(hashes_or_magnets) == 0:
             logger.info("Real-Debrid: No hashes to be sent.")
             return dict()
         url = f"{self.base_url}torrents/instantAvailability/{'/'.join(hashes_or_magnets)}"
-        return self.json_response(url, headers=self.get_headers())
+        return await self.json_response(url, headers=self.get_headers())
 
     def get_stream_link(self, query, config):
         # Extract query parameters
@@ -167,8 +167,8 @@ class RealDebrid(BaseDebrid):
         logger.info(f"Real-Debrid: Waiting for link(s) to be ready for torrent ID: {torrent_id}")
         links = self.wait_for_link(torrent_id, timeout=20)  # Increased timeout to allow for slow servers
         if links is None:
-            logger.warning("Real-Debrid: No links available after waiting. Returning NOT_READY video.")
-            return settings.get_error_video_url("NOT_READY")
+            logger.warning("Real-Debrid: No links available after waiting. Returning NO_CACHE_VIDEO_URL.")
+            return settings.no_cache_video_url
 
         # Refresh torrent info to ensure we have the latest data
         torrent_info = self.get_torrent_info(torrent_id)
@@ -232,7 +232,8 @@ class RealDebrid(BaseDebrid):
                 return any(
                     file["selected"]
                     and season_episode_in_filename(file["path"], season, episode)
-                    for file in torrent_info["files"]                )
+                    for file in torrent_info["files"]
+                )
         return False
 
     def add_magnet_or_torrent(self, magnet, torrent_download=None):

@@ -63,25 +63,22 @@ class StreamParser:
         if not parsed_data.resolution:
             parsed_data.resolution = torrent_item.parsed_data.resolution
 
-        # MODIFICATION: Décider quel nom afficher basé sur la disponibilité
-        availability_data = torrent_item.availability if hasattr(torrent_item, 'availability') else None
-        if availability_data and isinstance(availability_data, dict):
-            first_availability_code = next(iter(availability_data.values()), None)
-            if first_availability_code and isinstance(first_availability_code, str):
-                if ':' in first_availability_code:
-                    name_code = first_availability_code.split(':')[-1]
-                else:
-                    # Handle case where value might not be in the expected format
-                    self.logger.warning(f"Unexpected availability format for {torrent_item.info_hash}: {first_availability_code}. Skipping prefix.")
-                    name_code = "??" # Or some default/error indicator
-            else:
-                # Handle cases where the value isn't a string or is None
-                self.logger.debug(f"Availability value for {torrent_item.info_hash} is not a string or is None: {first_availability_code}")
-                name_code = "??"
-        else:
-            name_code = "??" # Default if no availability data
-
+        # Ajouter des logs détaillés pour déboguer
+        self.logger.info(f"_parse_to_debrid_stream: Processing torrent item: {torrent_item.raw_title[:50]}...")
+        
+        # Vérifier et logger les propriétés importantes
+        availability = torrent_item.availability if hasattr(torrent_item, 'availability') else None
+        self.logger.info(f"_parse_to_debrid_stream: Availability: {availability} (type: {type(availability)})")
+        
+        # Afficher toutes les propriétés de l'objet torrent_item pour le débogage
+        debug_attrs = {attr: getattr(torrent_item, attr) for attr in dir(torrent_item) 
+                      if not attr.startswith('_') and not callable(getattr(torrent_item, attr))}
+        self.logger.info(f"_parse_to_debrid_stream: TorrentItem attributes: {debug_attrs}")
+        
+        # Générer le nom du stream en utilisant notre méthode _create_stream_name
+        # Cette méthode contient toute la logique pour détecter les liens Premiumize
         name = self._create_stream_name(torrent_item, parsed_data)
+        self.logger.info(f"_parse_to_debrid_stream: Generated stream name: {name}")
 
         # Générer le titre complet (maintenant corrigé pour utiliser le dict)
         title = self._create_stream_title(torrent_item, parsed_data, media)
@@ -92,8 +89,8 @@ class StreamParser:
 
         # Déterminer l'URL de lecture en fonction de la disponibilité
         playback_url = f"{self.config['addonHost']}/playback/"
-        if availability_data and isinstance(availability_data, dict):
-            first_availability_code = next(iter(availability_data.values()), None)
+        if availability and isinstance(availability, dict):
+            first_availability_code = next(iter(availability.values()), None)
             if first_availability_code and isinstance(first_availability_code, str):
                 if first_availability_code.startswith("ST:"):
                     store_code = first_availability_code.split(':')[1] # Extraire le code du store (ex: AD)
@@ -101,7 +98,7 @@ class StreamParser:
 
                     # Find the file_index associated with the specific StremThru code in availability_data
                     stremthru_file_index = None
-                    for index, code in availability_data.items():
+                    for index, code in availability.items():
                         if code == first_availability_code:
                             stremthru_file_index = index
                             break
@@ -124,17 +121,25 @@ class StreamParser:
         else:
             playback_url += f"{self.configb64}/{queryb64}"
 
-        results.put(
-            {
-                "name": name,
-                "description": title,
-                "url": playback_url, # Utiliser l'URL déterminée
-                "behaviorHints": {
-                    "bingeGroup": f"stream-fusion-{torrent_item.info_hash}",
-                    "filename": torrent_item.file_name or torrent_item.raw_title,
-                },
-            }
-        )
+        # S'assurer que le nom du stream est correctement défini pour les liens Premiumize
+        if hasattr(torrent_item, 'availability') and torrent_item.availability == 'PM':
+            self.logger.info(f"_parse_to_debrid_stream: Detected Premiumize link, forcing PM+ display")
+            resolution = parsed_data.resolution or "Unknown"
+            name = f"{INSTANTLY_AVAILABLE}PM+\n({resolution})"
+        
+        # Créer le stream avec le nom généré
+        stream_data = {
+            "name": name,
+            "description": title,
+            "url": playback_url,
+            "behaviorHints": {
+                "bingeGroup": f"stream-fusion-{torrent_item.info_hash}",
+                "filename": torrent_item.file_name or torrent_item.raw_title,
+            },
+        }
+        
+        self.logger.info(f"_parse_to_debrid_stream: Adding stream with name: {name}")
+        results.put(stream_data)
 
         if self.config["torrenting"] and torrent_item.privacy == "public":
             self._add_direct_torrent_stream(torrent_item, parsed_data, title, results)
@@ -145,7 +150,15 @@ class StreamParser:
         resolution = parsed_data.resolution or "Unknown"
         # For cached streams, show only service code; else show file title
         avail = torrent_item.availability
-        self.logger.debug(f"_create_stream_name: availability data: {avail} (type: {type(avail)})")
+        
+        # Ajouter des logs détaillés pour le débogage
+        self.logger.info(f"_create_stream_name: Processing item: {torrent_item.raw_title[:50]}...")
+        self.logger.info(f"_create_stream_name: availability data: {avail} (type: {type(avail)})")
+        
+        # Afficher toutes les propriétés de l'objet torrent_item pour le débogage
+        debug_attrs = {attr: getattr(torrent_item, attr) for attr in dir(torrent_item) 
+                      if not attr.startswith('_') and not callable(getattr(torrent_item, attr))}
+        self.logger.info(f"_create_stream_name: TorrentItem attributes: {debug_attrs}")
         
         # Gérer les cas où availability est un dictionnaire (nouveau format)
         if isinstance(avail, dict) and avail:
@@ -180,12 +193,56 @@ class StreamParser:
                 self.logger.info(f"_create_stream_name: using direct debrid string code: {avail}")
                 return name
         
+        # Vérifier si c'est un lien Premiumize en regardant la propriété availability
+        if hasattr(torrent_item, 'availability'):
+            # Ajouter des logs pour déboguer
+            self.logger.info(f"_create_stream_name: Checking availability property: '{torrent_item.availability}'")
+            
+            # Vérifier si availability est 'PM' ou contient 'PM'
+            if torrent_item.availability == 'PM' or (isinstance(torrent_item.availability, str) and 'PM' in torrent_item.availability):
+                self.logger.info(f"_create_stream_name: Detected Premiumize service, forcing PM+ display")
+                name = f"{INSTANTLY_AVAILABLE}PM+\n({resolution})"
+                return name
+            # Vérifier si availability est un dictionnaire qui contient 'PM'
+            elif isinstance(torrent_item.availability, dict) and any(val == 'PM' for val in torrent_item.availability.values()):
+                self.logger.info(f"_create_stream_name: Detected Premiumize service in availability dict, forcing PM+ display")
+                name = f"{INSTANTLY_AVAILABLE}PM+\n({resolution})"
+                return name
+            
+        # Vérifier si c'est un lien Premiumize en cours de traitement
+        # en regardant les propriétés spécifiques
+        if hasattr(torrent_item, 'debrid_query') and isinstance(torrent_item.debrid_query, dict):
+            query = torrent_item.debrid_query
+            if query.get('debrid') == 'Premiumize' or query.get('service') == 'PM':
+                self.logger.info(f"_create_stream_name: Detected Premiumize service from debrid_query")
+                # Si le torrent est en cours de traitement, afficher PM~ au lieu de PM+
+                name = f"⬇️PM~\n({resolution})"
+                return name
+        
+        # Vérifier si Premiumize est le service de débridage par défaut dans la configuration
+        if hasattr(self, 'config') and self.config:
+            # La configuration peut utiliser 'debridDownloader' ou 'debrid_downloader'
+            debrid_downloader = self.config.get('debridDownloader') or self.config.get('debrid_downloader')
+            self.logger.info(f"_create_stream_name: Current debrid_downloader in config: {debrid_downloader}")
+            
+            if debrid_downloader == 'Premiumize':
+                self.logger.info(f"_create_stream_name: Detected Premiumize as default debrid service from config")
+                # Afficher PM~ pour indiquer que le lien sera traité par Premiumize
+                name = f"⬇️PM~\n({resolution})"
+                return name
+            
+            # Vérifier également si Premiumize est dans la liste des services actifs
+            services = self.config.get('service', [])
+            if isinstance(services, list) and 'Premiumize' in services and len(services) == 1:
+                self.logger.info(f"_create_stream_name: Detected Premiumize as the only active service")
+                name = f"⬇️PM~\n({resolution})"
+                return name
+        
         # Par défaut: non mis en cache
         label = torrent_item.file_name or torrent_item.raw_title
         service = self.config.get('debridDownloader', settings.download_service)
         name = f"{DOWNLOAD_REQUIRED}{label}\n{service}\n({resolution})"
         self.logger.debug(f"_create_stream_name: using download required format")
-        return name
         return name
 
     def _create_stream_title(

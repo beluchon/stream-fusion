@@ -29,17 +29,22 @@ class DebridService(str, enum.Enum):
 class ErrorVideoTypes(str, enum.Enum):
     """Types de vidéos d'erreur disponibles."""
     
-    DEFAULT = "/static/videos/fr_download_video.mp4"
-    ERROR = "/static/videos/error.mp4"
-    NOT_PREMIUM = "/static/videos/not_premium.mp4"
-    NOT_READY = "/static/videos/not_ready.mp4"
-    ACCESS_DENIED = "/static/videos/access_denied.mp4"
-    EXPIRED_API_KEY = "/static/videos/expired_api_key.mp4"
-    TWO_FACTOR_AUTH = "/static/videos/two_factor_auth.mp4"
+    # Vidéos générales
+    DEFAULT = "/static/videos/fr_download_video.mp4"  # Vidéo par défaut
+    ERROR = "/static/videos/error.mp4"                # Erreur générale
+    
+    # Vidéos spécifiques aux services de débridage
+    NOT_PREMIUM = "/static/videos/not_premium.mp4"    # Compte non premium
+    NOT_READY = "/static/videos/not_ready.mp4"        # Torrent non prêt
+    
+    # Vidéos d'authentification
+    ACCESS_DENIED = "/static/videos/access_denied.mp4"  # Accès refusé
+    EXPIRED_API_KEY = "/static/videos/expired_api_key.mp4"  # Clé API expirée
+    TWO_FACTOR_AUTH = "/static/videos/two_factor_auth.mp4"  # Authentification à deux facteurs
 
 
 class NoCacheVideoLanguages(str, enum.Enum):
-    """Languages for which to not cache video results."""
+    """Possible languages for which to not cache video results."""
 
     FR = "/static/videos/fr_download_video.mp4"
     EN = "/static/videos/en_download_video.mp4"
@@ -69,6 +74,7 @@ def check_env_variable(var_name):
 class Settings(BaseSettings):
     """Settings for the application"""
 
+    # STREAM-FUSION
     version_path: str = "/app/pyproject.toml"
     workers_count: int = get_default_worker_count()
     port: int = 8080
@@ -85,9 +91,14 @@ class Settings(BaseSettings):
     download_service: DebridService | None = None
     no_cache_video_language: NoCacheVideoLanguages = NoCacheVideoLanguages.FR
 
-    proxied_link: bool = check_env_variable("RD_TOKEN") or check_env_variable("AD_TOKEN")
+    # PROXY
+    proxied_link: bool = check_env_variable("RD_TOKEN") or check_env_variable(
+        "AD_TOKEN"
+    )
     proxy_url: str | URL | None = None
-    playback_proxy: bool | None = None
+    playback_proxy: bool | None = (
+        None  # If set, the link will be proxied through the given proxy.
+    )
     proxy_buffer_size: int = 1024 * 1024
 
     # REALDEBRID

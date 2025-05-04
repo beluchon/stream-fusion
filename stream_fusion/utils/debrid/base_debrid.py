@@ -1,7 +1,10 @@
 from collections import deque
+from fastapi import HTTPException
+
 import json
 import time
 import asyncio
+import weakref
 
 import aiohttp
 import requests
@@ -26,12 +29,55 @@ class BaseDebrid:
         self.global_requests = deque()
         self.torrent_requests = deque()
 
+    @property
+    def session(self):
+        # Si la session est fermée, en créer une nouvelle
+        if self.__session.closed:
+            logger.info("BaseDebrid: Session fermée, création d'une nouvelle session")
+            self.__session = self._create_session()
+        return self.__session
+
     def _create_session(self):
         session = aiohttp.ClientSession()
         if settings.proxy_url:
             self.logger.info(f"BaseDebrid: Using proxy: {settings.proxy_url}")
             session.connector = aiohttp.TCPConnector(proxy=str(settings.proxy_url))
+        # Enregistrer une fonction de finalisation pour fermer la session lorsque l'objet est détruit
+        weakref.finalize(self, self._close_session, session)
         return session
+
+        
+    def _close_session(self, session):
+        if session and not session.closed:
+            # Créer une tâche pour fermer la session de manière asynchrone
+            import asyncio
+            try:
+                # Pour Python 3.7+
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Si nous sommes déjà dans une boucle d'événements, créer une tâche
+                    loop.create_task(session.close())
+                else:
+                    # Sinon, exécuter une nouvelle boucle
+                    asyncio.run(session.close())
+                logger.info("BaseDebrid: Session client fermée proprement via asyncio")
+            except Exception as e:
+                # Fallback: fermer juste le connecteur si la fermeture asynchrone échoue
+                if session._connector_owner and hasattr(session, '_connector'):
+                    session._connector.close()
+                logger.warning(f"BaseDebrid: Fermeture de session partielle (connecteur uniquement): {e}")
+            
+    async def close(self):
+        """Ferme explicitement la session client si elle existe et n'est pas déjà fermée."""
+        if self.__session and not self.__session.closed:
+            await self.__session.close()
+            logger.info("BaseDebrid: Session client fermée explicitement")
+            
+    async def __aenter__(self):
+        return self
+        
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close()
 
     def _rate_limit(self, requests_queue, limit, period):
         current_time = time.time()

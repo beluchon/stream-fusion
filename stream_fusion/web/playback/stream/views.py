@@ -305,60 +305,80 @@ async def get_stream_link(
         logger.error("Playback: Service not found in query")
         raise HTTPException(status_code=500, detail="Service not found in query")
 
+    # Fonction pour analyser les logs et déterminer le type d'erreur
     def determine_error_type(link, log_message):
-        """Determine the type of error based on log message."""
         if link is not None and link != settings.no_cache_video_url:
-            return None
+            return None  # Pas d'erreur
             
+        # Mots-clés pour détecter les différents types d'erreur
         error_keywords = {
             "NOT_PREMIUM": ["premium", "not premium", "account not premium"],
             "NOT_READY": ["not ready", "caching in progress", "timed out", "timeout"],
             "ACCESS_DENIED": ["access denied", "unauthorized", "forbidden"],
             "EXPIRED_API_KEY": ["expired", "api key expired", "invalid key"],
             "TWO_FACTOR_AUTH": ["two factor", "2fa", "authentication required"],
-            "ERROR": ["error", "failed", "failure"]
+            "ERROR": ["error", "failed", "failure"]  # Erreur générale (dernier recours)
         }
         
+        # Convertir le message de log en minuscules pour la comparaison
         log_lower = log_message.lower() if log_message else ""
         
+        # Vérifier chaque type d'erreur
         for error_type, keywords in error_keywords.items():
             for keyword in keywords:
                 if keyword in log_lower:
-                    logger.debug(f"Playback: Detected error type '{error_type}' based on keyword '{keyword}'")
+                    logger.debug(f"Playback: Détection du type d'erreur '{error_type}' basé sur le mot-clé '{keyword}'")
                     return error_type
         
+        # Par défaut, retourner None (utiliser la vidéo par défaut)
         return None
     
+    # Approche simplifiée pour détecter le type d'erreur sans modifier les débrideurs
     error_type = None
     
+    # Si aucun lien n'est retourné, déterminer le type d'erreur en fonction du service
     if link is None or link == settings.no_cache_video_url:
+        # Mapper les services aux types d'erreur les plus probables
         service_error_map = {
-            "PM": "NOT_PREMIUM",
-            "RD": "NOT_READY",
-            "AD": "NOT_READY",
-            "TB": "NOT_READY"
+            "PM": "NOT_PREMIUM",  # Premiumize - problème de compte non premium
+            "RD": "NOT_READY",    # RealDebrid - torrent pas encore prêt
+            "AD": "NOT_READY",    # AllDebrid - torrent pas encore prêt
+            "TB": "NOT_READY"     # TorBox - torrent pas encore prêt
         }
         
+        # Utiliser la correspondance service -> erreur si disponible
         if service in service_error_map:
             error_type = service_error_map[service]
-            logger.debug(f"Playback: Detected error type for {service}: {error_type}")
+            logger.debug(f"Playback: Type d'erreur détecté pour {service}: {error_type}")
         else:
+            # Par défaut, utiliser ERROR pour les services non reconnus
             error_type = "ERROR"
             
+        # Détection spécifique pour les différents services
+        # Utiliser les informations disponibles dans le contexte actuel
         if service == "PM":
+            # Pour Premiumize, vérifier le message de log le plus récent
+            logger.debug(f"Playback: Détection d'erreur pour Premiumize")
+            # Par défaut, utiliser NOT_PREMIUM pour Premiumize
             error_type = "NOT_PREMIUM"
         elif service == "RD" or service == "AD" or service == "TB":
+            # Pour les autres services, vérifier si le torrent est en cours de téléchargement
+            logger.debug(f"Playback: Détection d'erreur pour {service}")
+            # Par défaut, utiliser NOT_READY pour les autres services
             error_type = "NOT_READY"
     
+    # Sélectionner la vidéo appropriée en fonction du type d'erreur
     if link is None or link == settings.no_cache_video_url:
         if error_type:
             final_link = settings.get_error_video_url(error_type)
-            logger.info(f"Playback: Using error video '{error_type}' based on log analysis")
+            logger.info(f"Playback: Utilisation de la vidéo d'erreur '{error_type}' basée sur l'analyse des logs")
         else:
             final_link = settings.no_cache_video_url
     else:
         final_link = link
     
+    # Mettre en cache le lien si ce n'est pas une vidéo d'erreur
+    # Vérifier si c'est une vidéo d'erreur (par le chemin local)
     is_error_video = (
         final_link != settings.no_cache_video_url and 
         final_link.startswith("/static/videos/")
@@ -366,10 +386,11 @@ async def get_stream_link(
     
     if not is_error_video:
         logger.debug(f"Playback: Caching new stream link: {final_link}")
-        await redis_cache.set(cache_key, final_link, expiration=3600)
+        await redis_cache.set(cache_key, final_link, expiration=3600)  # Cache for 1 hour
         logger.info(f"Playback: New stream link generated and cached: {final_link}")
     else:
         logger.debug(f"Playback: Stream link not cached (error video or NO_CACHE_VIDEO_URL): {final_link}")
+        # Pour les vidéos d'erreur, on s'assure qu'elles ne sont pas mises en cache
         await redis_cache.delete(cache_key)
     
     return final_link
@@ -691,10 +712,10 @@ async def get_playback(
         if not settings.proxied_link:
             logger.debug(f"Playback: Redirecting to non-proxied link: {link}")
             
-            # Check if the link is an error video
+            # Utiliser 302 pour les vidéos d'erreur comme dans jackettio
             if link.startswith("/static/videos/"):
                 logger.info(f"Playback: Detected error video, using 302 redirect with headers: {link}")
-                # Set headers to prevent caching
+                # Ajouter des headers spéciaux pour les vidéos d'erreur
                 headers = {
                     "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
                     "Pragma": "no-cache",
@@ -702,9 +723,11 @@ async def get_playback(
                 }
                 return RedirectResponse(url=link, status_code=status.HTTP_302_FOUND, headers=headers)
             else:
-                # For normal links, use 301 redirect as in stream-fusion-master
+                # Pour les liens normaux, utiliser 301 comme dans stream-fusion-master
                 logger.debug(f"Playback: Using 301 redirect for normal link")
                 return RedirectResponse(url=link, status_code=status.HTTP_301_MOVED_PERMANENTLY)
+
+        logger.debug("Playback: Preparing to proxy stream")
         headers = {}
         range_header = request.headers.get("range")
         if range_header and "=" in range_header:

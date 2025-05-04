@@ -31,11 +31,13 @@ class Torbox(BaseDebrid):
             return {"Authorization": f"Bearer {self.config["TBToken"]}"}
 
     async def add_magnet(self, magnet, ip=None, privacy="private"):
+        # Extraire le magnet si c'est un dictionnaire
         if isinstance(magnet, dict) and magnet.get("magnet"):
             magnet = magnet.get("magnet")
             
+        # Afficher le début du magnet dans les logs
         magnet_preview = magnet[:50] + "..." if len(magnet) > 50 else magnet
-        logger.info(f"Torbox: Adding magnet: {magnet_preview}")
+        logger.info(f"Torbox: Ajout du magnet: {magnet_preview}")
         
         url = f"{self.base_url}/torrents/createtorrent"
         seed = 2 if privacy == "private" else 1
@@ -54,7 +56,7 @@ class Torbox(BaseDebrid):
             return None
 
     async def add_torrent(self, torrent_file, privacy="private"):
-        logger.info("Torbox: Adding torrent file")
+        logger.info("Torbox: Ajout du fichier torrent")
         url = f"{self.base_url}/torrents/createtorrent"
         seed = 2 if privacy == "private" else 1
         data = {
@@ -74,7 +76,7 @@ class Torbox(BaseDebrid):
             return None
 
     async def get_torrent_info(self, torrent_id):
-        logger.info(f"Torbox: Getting torrent info for ID: {torrent_id}")
+        logger.info(f"Torbox: Récupération des informations pour le torrent ID: {torrent_id}")
         url = f"{self.base_url}/torrents/mylist?bypass_cache=true&id={torrent_id}"
         
         try:
@@ -86,7 +88,7 @@ class Torbox(BaseDebrid):
             return None
 
     async def control_torrent(self, torrent_id, operation):
-        logger.info(f"Torbox: Controlling torrent ID: {torrent_id}, operation: {operation}")
+        logger.info(f"Torbox: Contrôle du torrent ID: {torrent_id}, opération: {operation}")
         url = f"{self.base_url}/torrents/controltorrent"
         data = {
             "torrent_id": torrent_id,
@@ -149,21 +151,21 @@ class Torbox(BaseDebrid):
         # Wait for the torrent to be ready
         if not await self._wait_for_torrent_completion(torrent_id):
             logger.warning("Torbox: Torrent not ready, caching in progress.")
-            return settings.get_error_video_url("NOT_READY")
+            return settings.no_cache_video_url
 
         # Select the appropriate file
         file_id = await self._select_file(torrent_info, stream_type, file_index, season, episode)
         
         if file_id == None:
             logger.error("Torbox: No matching file found.")
-            return settings.get_error_video_url("ERROR")
+            return settings.no_cache_video_url
 
         # Request the download link
         download_link_response = await self.request_download_link(torrent_id, file_id)
         
         if not download_link_response or "data" not in download_link_response:
             logger.error("Torbox: Failed to get download link.")
-            return settings.get_error_video_url("ERROR")
+            return settings.no_cache_video_url
 
         logger.info(f"Torbox: Got download link: {download_link_response['data']}")
         return download_link_response['data']

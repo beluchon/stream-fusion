@@ -21,11 +21,9 @@ class StremThruDebrid(BaseDebrid):
         'pm': 'premiumize',
         'tb': 'torbox',
         'dl': 'debridlink',
-        'ed': 'easydebrid',
-        'oc': 'offcloud',
-        'pk': 'pikpak',
         'en': 'easydebrid',
-        'pp': 'pikpak'
+        'oc': 'offcloud',
+        'pp': 'pikpak',
     }
     STORE_NAME_TO_TOKEN_KEY = {
         'realdebrid': 'RDToken',
@@ -40,7 +38,10 @@ class StremThruDebrid(BaseDebrid):
 
     def __init__(self, config: Dict[str, Any], session: aiohttp.ClientSession = None):
         super().__init__(config, session=session)
+        # Ne pas fermer la session ici - elle sera fermée par le destructeur de BaseDebrid
+        # ou par FastAPI à la fin de la requête
         pass
+        # Determine base URL: try settings first, then config
         base = getattr(settings, 'stremthru_base_url', None) or config.get('stremthru_url')
         if not base:
             logger.warning("StremThruDebrid: URL not specified; proxy calls may fail.")
@@ -203,21 +204,27 @@ class StremThruDebrid(BaseDebrid):
         # Si aucun file_index fourni, on prend -1 (pour la vignettes ou premier lien)
         raw_idx = query.get('file_index')
         idx = raw_idx if raw_idx is not None else -1
-        code_raw = query.get('store_code')
-        if not code_raw:
-            # Infer store_code from config debridDownloader
-            default = config.get('debridDownloader')
-            inv = {v: k for k, v in self.STORE_CODE_TO_NAME.items()}
-            if default:
-                code_raw = inv.get(default.lower())
-                if code_raw:
-                    logger.debug(f"StremThruDebrid.get_stream_link: inferred store_code '{code_raw}' from config.debridDownloader")
+        # Vérifier d'abord si un store_code a été défini sur l'instance
+        if hasattr(self, 'store_code') and self.store_code:
+            code_raw = self.store_code
+            logger.debug(f"StremThruDebrid.get_stream_link: using store_code '{code_raw}' from instance attribute")
+        else:
+            # Sinon, essayer de l'extraire de la requête
+            code_raw = query.get('store_code')
+            if not code_raw:
+                # Infer store_code from config debridDownloader
+                default = config.get('debridDownloader')
+                inv = {v: k for k, v in self.STORE_CODE_TO_NAME.items()}
+                if default:
+                    code_raw = inv.get(default.lower())
+                    if code_raw:
+                        logger.debug(f"StremThruDebrid.get_stream_link: inferred store_code '{code_raw}' from config.debridDownloader")
+                    else:
+                        logger.error("StremThruDebrid.get_stream_link: cannot infer store_code from config.debridDownloader")
+                        raise HTTPException(status_code=400, detail="Missing or invalid store_code")
                 else:
-                    logger.error("StremThruDebrid.get_stream_link: cannot infer store_code from config.debridDownloader")
-                    raise HTTPException(status_code=400, detail="Missing or invalid store_code")
-            else:
-                logger.error("StremThruDebrid.get_stream_link: missing store_code and no debridDownloader in config")
-                raise HTTPException(status_code=400, detail="Missing store_code")
+                    logger.error("StremThruDebrid.get_stream_link: missing store_code and no debridDownloader in config")
+                    raise HTTPException(status_code=400, detail="Missing store_code")
         code = str(code_raw).lower()
         name = self.STORE_CODE_TO_NAME.get(code)
         if not name:
@@ -360,40 +367,63 @@ class StremThruDebrid(BaseDebrid):
             api_items = res.get('data',{}).get('items',[])
             logger.debug(f"StremThruDebrid.get_cached_files: Received {len(api_items)} items from API for store '{store_name}'")
             
-            # Traiter les résultats de l'API
+            
+            # Process API results
             for it in api_items:
                 h = it.get('hash')
                 if h and h in out:
-                    cached_hashes.add(h)
                     fs = it.get('files', [])
+                    
+                    # Check if the torrent is actually cached
+                    is_cached = False
+                    if store_name == 'alldebrid':
+                        # For AllDebrid, check multiple fields in priority order
+                        if 'ready' in it:
+                            is_cached = bool(it.get('ready'))
+                        elif 'instant' in it:
+                            is_cached = bool(it.get('instant'))
+                        elif 'status' in it:
+                            status = it.get('status', '').lower()
+                            is_cached = status in ['ready', 'cached', 'completed', 'downloaded']
+                        else:
+                            is_cached = bool(it.get('cached', False))
+                    else:
+                        # For other services, use the standard 'cached' field
+                        is_cached = it.get('cached', False)
+                    
+                    if is_cached:
+                        cached_hashes.add(h)
+                        logger.info(f"StremThruDebrid.get_cached_files: Hash {h} is CACHED for {store_name}")
+                    else:
+                        logger.info(f"StremThruDebrid.get_cached_files: Hash {h} is NOT CACHED for {store_name}")
+                    
                     for f in fs:
-                        # Ajouter le fichier en cache
+                        # Add the file with appropriate cache status
                         out[h].append({
                             'file_index': f.get('index'), 
                             'title': f.get('name'), 
                             'size': f.get('size'),
-                            'cached': True  # Marquer comme en cache
+                            'cached': is_cached  # Use the actual cache status
                         })
         except Exception as e:
             logger.error(f"StremThruDebrid.get_cached_files: Error checking magnets: {e}")
         
-        # Pour chaque hash qui n'est pas en cache selon l'API, ajouter un fichier factice
+        # For each hash that is not cached according to the API, add a fake file
         for h in hashes:
-            if h not in cached_hashes or not out[h]:  # Si pas en cache ou pas de fichiers
+            if h not in cached_hashes or not out[h]:  # If not cached or no files
                 item = items_by_hash.get(h)
                 if item:
-                    # Récupérer le nom du fichier depuis l'item
+                    # Get the file name from the item
                     file_name = getattr(item, 'file_name', None) or getattr(item, 'raw_title', f"Unknown file ({h})")
                     file_size = getattr(item, 'size', 0)
                     
-                    # Ajouter le fichier factice
+                    # Add the non-cached file without the [NON-CACHED] prefix
                     out[h].append({
-                        'file_index': 0,  # Index par défaut
-                        'title': f"[NON-CACHED] {file_name}",
+                        'file_index': 0,  # Default index
+                        'title': file_name,  # Don't add [NON-CACHED] prefix
                         'size': file_size,
-                        'cached': False  # Marquer comme non en cache
+                        'cached': False  # Mark as not cached
                     })
-                    logger.debug(f"StremThruDebrid.get_cached_files: Added non-cached file for hash {h}: {file_name}")
         
         logger.debug(f"StremThruDebrid.get_cached_files: Returning {sum(len(files) for files in out.values())} files for {len(out)} hashes")
         return out, store_name

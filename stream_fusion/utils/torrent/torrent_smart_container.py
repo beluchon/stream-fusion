@@ -680,7 +680,7 @@ class TorrentSmartContainer:
                     self._update_file_details(
                         item,
                         [{'file_index': file_index, 'title': file_title, 'size': file_size}],
-                        debrid=f"ST:{availability_code}"
+                        debrid=availability_code
                     )
                     
                     # Mettre à jour les attributs de l'item

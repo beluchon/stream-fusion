@@ -1,6 +1,10 @@
-import hashlib
 import time
 import re
+import hashlib
+import json
+import urllib.parse
+import zlib
+import base64
 from fastapi import APIRouter, Depends, HTTPException, Request
 import asyncio
 
@@ -47,8 +51,64 @@ import zlib
 import re
 
 
-router = APIRouter()
+# Fonctions de génération de clés de cache au niveau global
+def stream_cache_key(media):
+    # Utiliser un identifiant générique pour le cache au lieu de dépendre de variables externes
+    try:
+        # Identifiant générique sécurisé
+        cache_user_identifier = 'generic_user'
+            
+        if isinstance(media, Movie):
+            # S'assurer que media.titles est une liste non vide
+            title = media.titles[0] if hasattr(media, 'titles') and media.titles else 'unknown_title'
+            year = getattr(media, 'year', 'unknown_year')
+            language = media.languages[0] if hasattr(media, 'languages') and media.languages else 'unknown_lang'
+            key_string = f"stream:{cache_user_identifier}:{title}:{year}:{language}"
+        elif isinstance(media, Series):
+            # S'assurer que media.titles est une liste non vide
+            title = media.titles[0] if hasattr(media, 'titles') and media.titles else 'unknown_title'
+            language = media.languages[0] if hasattr(media, 'languages') and media.languages else 'unknown_lang'
+            season = getattr(media, 'season', 'S00')
+            episode = getattr(media, 'episode', 'E00')
+            key_string = f"stream:{cache_user_identifier}:{title}:{language}:{season}{episode}"
+        else:
+            logger.error("Search: Only Movie and Series are allowed as media!")
+            raise HTTPException(
+                status_code=500, detail="Only Movie and Series are allowed as media!"
+            )
+        
+        # Générer le hash de manière sécurisée
+        hashed_key = hashlib.sha256(key_string.encode("utf-8")).hexdigest()
+        return hashed_key[:16]
+    except Exception as e:
+        logger.error(f"Search: Error generating cache key: {e}")
+        # Fallback sécurisé en cas d'erreur
+        try:
+            return hashlib.md5(str(media.__dict__).encode("utf-8")).hexdigest()[:16]
+        except:
+            return hashlib.md5(str(time.time()).encode("utf-8")).hexdigest()[:16]
 
+
+def media_cache_key(media):
+    try:
+        if isinstance(media, Movie):
+            key_string = f"media:{media.titles[0]}:{media.year}:{media.languages[0]}"
+        elif isinstance(media, Series):
+            key_string = f"media:{media.titles[0]}:{media.languages[0]}:{media.season}"
+        else:
+            raise TypeError("Only Movie and Series are allowed as media!")
+        hashed_key = hashlib.sha256(key_string.encode("utf-8")).hexdigest()
+        return hashed_key[:16]
+    except Exception as e:
+        logger.error(f"Search: Error generating media cache key: {e}")
+        # Fallback sécurisé en cas d'erreur
+        try:
+            return hashlib.md5(str(media.__dict__).encode("utf-8")).hexdigest()[:16]
+        except:
+            return hashlib.md5(str(time.time()).encode("utf-8")).hexdigest()[:16]
+
+
+router = APIRouter()
 
 @router.get("/{config}/stream/{stream_type}/{stream_id:path}", response_model=SearchResponse)
 async def get_results(
@@ -98,31 +158,7 @@ async def get_results(
     )
     logger.debug(f"Search: Retrieved media metadata for {str(media.titles)}")
 
-    def stream_cache_key(media):
-        cache_user_identifier = api_key if api_key else ip_address
-        if isinstance(media, Movie):
-            key_string = f"stream:{cache_user_identifier}:{media.titles[0]}:{media.year}:{media.languages[0]}"
-        elif isinstance(media, Series):
-            key_string = f"stream:{cache_user_identifier}:{media.titles[0]}:{media.languages[0]}:{media.season}{media.episode}"
-        else:
-            logger.error("Search: Only Movie and Series are allowed as media!")
-            raise HTTPException(
-                status_code=500, detail="Only Movie and Series are allowed as media!"
-            )
-        hashed_key = hashlib.sha256(key_string.encode("utf-8")).hexdigest()
-        return hashed_key[:16]
 
-    # Définir la fonction media_cache_key ici pour qu'elle soit disponible plus tôt
-    def media_cache_key(media):
-        if isinstance(media, Movie):
-            key_string = f"media:{media.titles[0]}:{media.year}:{media.languages[0]}"
-        elif isinstance(media, Series):
-            key_string = f"media:{media.titles[0]}:{media.languages[0]}:{media.season}"
-        else:
-            raise TypeError("Only Movie and Series are allowed as media!")
-        hashed_key = hashlib.sha256(key_string.encode("utf-8")).hexdigest()
-        return hashed_key[:16]
-    
     # Vérifier si le cache a été invalidé globalement
     force_refresh = False
     
@@ -232,6 +268,7 @@ async def get_results(
                     # Initialiser les variables pour ce stream dans le try
                     info_hash = None
                     original_name = None
+                    store_code = None
 
                     # 2. Extract and clean original_name
                     if stream_name_attr and isinstance(stream_name_attr, str):
@@ -277,7 +314,6 @@ async def get_results(
                         # Handle StremThru specific Base64 encoded URLs
                         if 'sf.stremiofr.com/playback' in stream_url:
                             # Extraire le store_code de l'URL StremThru ou du nom du stream
-                            store_code = None
                             
                             # 1. Vérifier d'abord dans le nom du stream (plus fiable)
                             if stream_name_attr:
@@ -554,6 +590,19 @@ async def get_results(
                         'info_hash': info_hash,
                         'original_name': original_name,
                         'needs_update': updated_stream
+                    })
+                # Vérifier si c'est un stream de service de débridage (AD+, PM+, etc.) même sans info_hash
+                elif original_name and any(indicator in stream_name_attr for indicator in ['⚡AD+', '⚡PM+', '⚡RD+', '⚡TB+', '⚡DL+']):
+                    logger.info(f"Search: Stream {i+1} - Stream de débridage sans info_hash: '{original_name}'. Inclus quand même.")
+                    # Générer un hash synthétique basé sur le nom pour permettre le suivi
+                    import hashlib
+                    synthetic_hash = hashlib.md5(f"{stream_name_attr}:{stream_url or ''}".encode()).hexdigest()[:40]
+                    processed_streams.append({
+                        'stream': stream,
+                        'info_hash': synthetic_hash,  # Utiliser un hash synthétique
+                        'original_name': original_name,
+                        'needs_update': updated_stream,
+                        'synthetic_hash': True  # Marquer comme hash synthétique
                     })
                 elif store_code and 'sf.stremiofr.com/playback' in stream_url and original_name:
                     # Stream StremThru sans info_hash mais avec store_code
