@@ -24,30 +24,17 @@ class DebridService(str, enum.Enum):
     AD = "AllDebrid"
     TB = "TorBox"
     PM = "Premiumize"
-
-
-class ErrorVideoTypes(str, enum.Enum):
-    """Types de vidéos d'erreur disponibles."""
-    
-    # Vidéos générales
-    DEFAULT = "/static/videos/fr_download_video.mp4"  # Vidéo par défaut
-    ERROR = "/static/videos/error.mp4"                # Erreur générale
-    
-    # Vidéos spécifiques aux services de débridage
-    NOT_PREMIUM = "/static/videos/not_premium.mp4"    # Compte non premium
-    NOT_READY = "/static/videos/not_ready.mp4"        # Torrent non prêt
-    
-    # Vidéos d'authentification
-    ACCESS_DENIED = "/static/videos/access_denied.mp4"  # Accès refusé
-    EXPIRED_API_KEY = "/static/videos/expired_api_key.mp4"  # Clé API expirée
-    TWO_FACTOR_AUTH = "/static/videos/two_factor_auth.mp4"  # Authentification à deux facteurs
+    DL = "Debrid-Link"
+    ED = "EasyDebrid"
+    OC = "Offcloud"
+    PP = "PikPak"
 
 
 class NoCacheVideoLanguages(str, enum.Enum):
     """Possible languages for which to not cache video results."""
 
-    FR = "/static/videos/fr_download_video.mp4"
-    EN = "/static/videos/en_download_video.mp4"
+    FR = "https://github.com/LimeDrive/stream-fusion/raw/refs/heads/develop/stream_fusion/static/videos/fr_download_video.mp4"
+    EN = "https://github.com/LimeDrive/stream-fusion/raw/refs/heads/develop/stream_fusion/static/videos/en_download_video.mp4"
 
     @classmethod
     def get_url(cls, language):
@@ -126,21 +113,19 @@ class Settings(BaseSettings):
     pm_token: str | None = None
     pm_unique_account: bool = check_env_variable("PM_TOKEN")
     pm_base_url: str = "https://www.premiumize.me/api"
+    
+    # STREMTHRU
+    stremthru_url: str = "https://stremthru.13377001.xyz"
 
     # LOGGING
-    log_level: LogLevel = Field(default=LogLevel.INFO)
-    log_to_file: bool = Field(default=False)
-    log_to_console: bool = Field(default=True)
-    log_file: str = Field(default="stream_fusion.log")
-    log_redacted: bool = Field(default=True)  # Masquer les informations sensibles dans les logs
-    log_path: str = Field(default="/app/config/logs/stream-fusion.log")  # Chemin du fichier de log
+    log_level: LogLevel = LogLevel.INFO
+    log_path: str = "/app/config/logs/stream-fusion.log"
+    log_redacted: bool = True
 
     # SECURITY
     secret_api_key: str | None = None
     security_hide_docs: bool = True
     allow_anonymous_access: bool = True  # Allow access without API key
-    playback_limit_requests: int = 20  # Limite de requêtes pour le playback
-    playback_limit_seconds: int = 60   # Période (en secondes) pour la limite de requêtes playback
 
     # POSTGRESQL_DB
     # TODO: Change the values, but break dev environment
@@ -171,6 +156,22 @@ class Settings(BaseSettings):
     # ZILEAN DMM API
     zilean_host: str = "zilean"
     zilean_port: int = 8181
+    
+    # DEBRIDLINK
+    dl_token: str | None = None
+    dl_unique_account: bool = check_env_variable("DL_TOKEN")
+    
+    # EASYDEBRID
+    ed_token: str | None = None
+    ed_unique_account: bool = check_env_variable("ED_TOKEN")
+    
+    # OFFCLOUD
+    oc_credentials: str | None = None
+    oc_unique_account: bool = check_env_variable("OC_CREDENTIALS")
+    
+    # PIKPAK
+    pp_credentials: str | None = None
+    pp_unique_account: bool = check_env_variable("PP_CREDENTIALS")
     zilean_schema: str = "http"
     zilean_max_workers: int = 4
     zilean_pool_connections: int = 10
@@ -198,23 +199,6 @@ class Settings(BaseSettings):
     dev_port: int = 8080
     develop: bool = False
     reload: bool = False
-
-    # STREMTHRU
-    stremthru_enabled: bool = False
-    stremthru_url: str = "https://stremthru.13377001.xyz/"
-    stremthru_store_auth: str | None = None
-
-    # DEBRIDLINK
-    debridlink_api_key: str | None = None
-
-    # EASYDEBRID
-    easydebrid_api_key: str | None = None
-
-    # OFFCLOUD
-    offcloud_credentials: str | None = None
-
-    # PIKPAK
-    pikpak_credentials: str | None = None
 
     @field_validator("proxy_url")
     @classmethod
@@ -298,26 +282,6 @@ class Settings(BaseSettings):
         Get the URL for the no-cache video based on the selected language.
         """
         return self.no_cache_video_language.value
-        
-    def get_error_video_url(self, error_type: str = None) -> str:
-        """
-        Get the URL for a specific error video.
-        
-        Args:
-            error_type: Type d'erreur ("not_premium", "not_ready", "access_denied", etc.)
-                        Si None, retourne la vidéo par défaut.
-        
-        Returns:
-            URL de la vidéo d'erreur correspondante
-        """
-        if not error_type:
-            return ErrorVideoTypes.DEFAULT.value
-            
-        try:
-            return getattr(ErrorVideoTypes, error_type.upper()).value
-        except (AttributeError, KeyError):
-            # Si le type d'erreur n'existe pas, retourne la vidéo d'erreur générale
-            return ErrorVideoTypes.ERROR.value
 
 
 try:

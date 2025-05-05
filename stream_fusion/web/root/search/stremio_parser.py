@@ -2,7 +2,6 @@ import json
 import queue
 import re
 import threading
-import json
 from typing import List
 
 from RTN import ParsedData
@@ -72,90 +71,15 @@ def parse_to_debrid_stream(
     results: queue.Queue,
     media: Media,
 ):
-    # Detect StremThru links and their cache status
-    is_stremthru = False
-    stremthru_code = ""
-    
-    # Detect StremThru links via URL
-    if hasattr(torrent_item, 'link') and torrent_item.link and 'sf.stremiofr.com/playback' in torrent_item.link:
-        is_stremthru = True
-        service_match = re.search(r'service=([A-Za-z]{2})', torrent_item.link)
-        if service_match:
-            stremthru_code = service_match.group(1).upper()
-    
-    # Detect StremThru links via availability attribute ("ST:XX")
-    avail = torrent_item.availability
-    if avail and isinstance(avail, str) and avail.startswith("ST:"):
-        is_stremthru = True
-        stremthru_code = avail.replace("ST:", "")
-    
-    # Determine if the StremThru link is cached
-    is_cached_stremthru = False
-    if is_stremthru:
-        # Check if the 'cached' attribute is defined and True
-        if hasattr(torrent_item, 'cached') and torrent_item.cached:
-            is_cached_stremthru = True
-        else:
-            is_cached_stremthru = False
-
-    parsed_data = torrent_item.parsed_data
-    resolution = parsed_data.resolution if parsed_data.resolution else "Unknow"
-    name = ""
-    title_prefix = ""
-
-    if is_stremthru:
-        # StremThru logic
-        icon = INSTANTLY_AVAILABLE if is_cached_stremthru else DOWNLOAD_REQUIRED
-        code_suffix = '+' if is_cached_stremthru else ''
-        name = f"{icon}{stremthru_code}{code_suffix}"
-        title_prefix = f"[{stremthru_code}{code_suffix}] "
-    elif avail == 'PM':
-        # Premiumize: Check pm_cached
-        if torrent_item.pm_cached:
-            name = f"{INSTANTLY_AVAILABLE}PM+"
-            title_prefix = "[PM+] "
-        else:
-            name = f"{DOWNLOAD_REQUIRED}PM"
-            title_prefix = "[PM] "
-    # Special case for AllDebrid
-    elif avail == 'AD':
-        # For AllDebrid, links are always considered cached
-        name = f"{INSTANTLY_AVAILABLE}AD+"
-        title_prefix = "[AD+] "
-    # Special cases for TorBox
-    elif avail == 'TB+':
-        name = f"{INSTANTLY_AVAILABLE}TB+"
-        title_prefix = "[TB+] "
-    elif avail == 'TB-':
-        name = f"{DOWNLOAD_REQUIRED}TB"
-        title_prefix = "[TB-] "
-    elif avail == 'TB':
-        # In the master version, all torrents with availability = "TB" are considered cached
-        name = f"{INSTANTLY_AVAILABLE}TB+"
-        title_prefix = "[TB+] "
-    # Special case for unavailable TorBox torrents (availability = None)
-    elif avail is None:
-        # Si c'est un torrent Torbox (ou traité par Torbox), on affiche la flèche bleue
-        name = f"{DOWNLOAD_REQUIRED}TB"
-        title_prefix = "[TB] "
-    # Fallback for other TorBox torrents with empty availability
-    elif torrent_item.indexer and "torbox" in torrent_item.indexer.lower():
-        name = f"{DOWNLOAD_REQUIRED}TB"
-        title_prefix = "[TB] "
-    elif avail == 'AD':
-        # AllDebrid: Toujours éclair + signe plus
-        name = f"{INSTANTLY_AVAILABLE}AD+"
-        title_prefix = "[AD+] "
+    if torrent_item.availability:
+        name = f"{INSTANTLY_AVAILABLE}|–{torrent_item.availability}-|{INSTANTLY_AVAILABLE}"
     else:
-        # Cas par défaut (liens directs, etc.)
-        name = torrent_item.file_name or torrent_item.raw_title
-        
-    # Add resolution to name
-    if resolution != "Unknow":
-        name += f"\n |_{resolution}_|"
+        name = f"{DOWNLOAD_REQUIRED}|–DL-|{DOWNLOAD_REQUIRED}"
 
-    # --- Detailed description construction --- 
     parsed_data: ParsedData = torrent_item.parsed_data
+
+    resolution = parsed_data.resolution if parsed_data.resolution else "Unknow"
+    name += f"\n |_{resolution}_|"
 
     size_in_gb = round(int(torrent_item.size) / 1024 / 1024 / 1024, 2)
 
@@ -196,19 +120,21 @@ def parse_to_debrid_stream(
         json.dumps(torrent_item.to_debrid_stream_query(media))
     ).replace("=", "%3D")
 
-    results.put({
-        "name": name,
-        "description": title,
-        "url": f"{host}/playback/{configb64}/{queryb64}",
-        "behaviorHints": {
-            "bingeGroup": f"stremio-jackett-{torrent_item.info_hash}",
-            "filename": (
-                torrent_item.file_name
-                if torrent_item.file_name is not None
-                else torrent_item.raw_title
-            ),
+    results.put(
+        {
+            "name": name,
+            "description": title,
+            "url": f"{host}/playback/{configb64}/{queryb64}",
+            "behaviorHints": {
+                "bingeGroup": f"stremio-jackett-{torrent_item.info_hash}",
+                "filename": (
+                    torrent_item.file_name
+                    if torrent_item.file_name is not None
+                    else torrent_item.raw_title
+                ),
+            },
         }
-    })
+    )
 
     if torrenting and torrent_item.privacy == "public":
         name = f"{DIRECT_TORRENT}\n{parsed_data.quality}\n"

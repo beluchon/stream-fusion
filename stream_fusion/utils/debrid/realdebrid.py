@@ -47,7 +47,7 @@ class RealDebrid(BaseDebrid):
         else:
             return {"Authorization": f"Bearer {self.token_manager.get_access_token()}"}
 
-    def add_magnet(self, magnet):
+    def add_magnet(self, magnet, ip=None):
         url = f"{self.base_url}torrents/addMagnet"
         data = {"magnet": magnet}
         logger.info(f"Real-Debrid: Adding magnet: {magnet}")
@@ -127,15 +127,15 @@ class RealDebrid(BaseDebrid):
             time.sleep(interval)
         return None
 
-    async def get_availability_bulk(self, hashes_or_magnets, media=None):
+    def get_availability_bulk(self, hashes_or_magnets, ip=None):
         self._torrent_rate_limit()
         if len(hashes_or_magnets) == 0:
             logger.info("Real-Debrid: No hashes to be sent.")
             return dict()
         url = f"{self.base_url}torrents/instantAvailability/{'/'.join(hashes_or_magnets)}"
-        return await self.json_response(url, headers=self.get_headers())
+        return self.json_response(url, headers=self.get_headers())
 
-    def get_stream_link(self, query, config):
+    def get_stream_link(self, query, config, ip=None):
         # Extract query parameters
         magnet = query["magnet"]
         stream_type = query["type"]
@@ -159,7 +159,7 @@ class RealDebrid(BaseDebrid):
 
         # If the torrent is not in cache, add it
         if torrent_id is None:
-            torrent_id = self.add_magnet_or_torrent_and_select(query)
+            torrent_id = self.add_magnet_or_torrent_and_select(query, ip)
             if not torrent_id:
                 logger.error("Real-Debrid: Failed to add or find torrent.")
                 raise HTTPException(status_code=500, detail="Real-Debrid: Failed to add or find torrent.")
@@ -236,7 +236,7 @@ class RealDebrid(BaseDebrid):
                 )
         return False
 
-    def add_magnet_or_torrent(self, magnet, torrent_download=None):
+    def add_magnet_or_torrent(self, magnet, torrent_download=None, ip=None):
         if torrent_download is None:
             logger.info("Real-Debrid: Adding magnet")
             magnet_response = self.add_magnet(magnet)
@@ -266,7 +266,7 @@ class RealDebrid(BaseDebrid):
         logger.info(f"Real-Debrid: New torrent added with ID: {torrent_id}")
         return self.get_torrent_info(torrent_id)
     
-    def add_magnet_or_torrent_and_select(self, query):
+    def add_magnet_or_torrent_and_select(self, query, ip=None):
         magnet = query['magnet']
         torrent_download = unquote(query["torrent_download"]) if query["torrent_download"] is not None else None
         stream_type = query['type']
@@ -274,7 +274,7 @@ class RealDebrid(BaseDebrid):
         season = query["season"]
         episode = query["episode"]
 
-        torrent_info = self.add_magnet_or_torrent(magnet, torrent_download)
+        torrent_info = self.add_magnet_or_torrent(magnet, torrent_download, ip)
         if not torrent_info or "files" not in torrent_info:
             logger.error("Real-Debrid: Failed to add or find torrent.")
             return None

@@ -29,22 +29,7 @@ class TorrentItem:
         self.trackers = []  # Trackers of the torrent
         self.file_index = None  # Index of the file inside of the torrent - it may be updated durring __process_torrent() and update_availability(). If the index is None and torrent is not None, it means that the series episode is not inside of the torrent.
         self.full_index = None  # Case where we cannot call RD to get the full index. Else None
-        
-        # Initialize availability as an empty string to match get_unaviable_hashes check
-        self.availability = ""  # Stores service codes (e.g., 'AD', 'RD') or remains empty until checked
-        
-        # Indique si le fichier est en cache ou non (pour StremThru principalement)
-        self.cached = True  # Par défaut, on considère que les fichiers sont en cache
-        
-        # Indique si ce fichier non mis en cache doit être conservé dans le cache Redis
-        self.non_cached_persistent = False  # Par défaut, on ne conserve pas les fichiers non mis en cache
-        
-        # Indique si ce fichier doit toujours être affiché, même s'il n'est pas en cache
-        self.always_show = True  # Par défaut, on affiche tous les fichiers
-
-        # Attributs pour l'état de cache des différents services
-        self.pm_cached: bool | None = None # Indique si le fichier est spécifiquement en cache chez Premiumize (transcodé)
-        self.tb_cached: bool | None = None # Indique si le fichier est spécifiquement en cache chez TorBox
+        self.availability = False  # If it's instantly available on the debrid service
 
         self.parsed_data: ParsedData = parsed_data  # Ranked result
 
@@ -56,15 +41,8 @@ class TorrentItem:
             "season": media.season if isinstance(media, Series) else None,
             "episode": media.episode if isinstance(media, Series) else None,
             "torrent_download": quote(self.torrent_download) if self.torrent_download is not None else None,
-            # Utiliser la chaîne de disponibilité complète comme code de service
             "service": self.availability if self.availability else "DL",
             "privacy": self.privacy if self.privacy else "private",
-            # Ajouter l'information de cache pour StremThru
-            "cached": self.cached,
-            "non_cached_persistent": self.non_cached_persistent,
-            "always_show": self.always_show,
-            'pm_cached': self.pm_cached, # Ajouter pm_cached à la query
-            'tb_cached': self.tb_cached, # Ajouter tb_cached à la query
         }
     
     def to_dict(self):
@@ -86,11 +64,6 @@ class TorrentItem:
             'file_index': self.file_index,
             'full_index': self.full_index,
             'availability': self.availability,
-            'cached': self.cached,
-            'non_cached_persistent': self.non_cached_persistent,
-            'always_show': self.always_show,
-            'pm_cached': self.pm_cached, # Ajouter pm_cached au dict
-            'tb_cached': self.tb_cached, # Ajouter tb_cached au dict
         }
     
     @classmethod
@@ -119,21 +92,6 @@ class TorrentItem:
         instance.file_index = data['file_index']
         instance.full_index = data['full_index']
         instance.availability = data['availability']
-        
-        # Récupérer l'attribut cached s'il existe, sinon utiliser True par défaut
-        instance.cached = data.get('cached', True)
-        
-        # Récupérer l'attribut non_cached_persistent s'il existe, sinon utiliser False par défaut
-        instance.non_cached_persistent = data.get('non_cached_persistent', False)
-        
-        # Récupérer l'attribut always_show s'il existe, sinon utiliser True par défaut
-        instance.always_show = data.get('always_show', True)
-        
-        # Récupérer l'attribut pm_cached s'il existe, sinon utiliser None par défaut
-        instance.pm_cached = data.get('pm_cached', None)
-        
-        # Récupérer l'attribut tb_cached s'il existe, sinon utiliser None par défaut
-        instance.tb_cached = data.get('tb_cached', None)
         
         instance.parsed_data = parse(instance.raw_title)
 

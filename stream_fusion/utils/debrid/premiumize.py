@@ -5,25 +5,24 @@ from stream_fusion.utils.debrid.base_debrid import BaseDebrid
 from stream_fusion.utils.general import get_info_hash_from_magnet, season_episode_in_filename
 from stream_fusion.logging_config import logger
 import time
-import asyncio
 
 
 class Premiumize(BaseDebrid):
-    def __init__(self, config, session=None):
-        super().__init__(config, session=session)
+    def __init__(self, config):
+        super().__init__(config)
         self.base_url = "https://www.premiumize.me/api"
         self.api_key = config.get('PMToken') or settings.pm_token
         if not self.api_key:
             logger.error("No Premiumize API key found in config or settings")
             raise ValueError("Premiumize API key is required")
         
-        # Note: La vérification du token est maintenant asynchrone et ne peut pas être appelée dans __init__
-        # Elle sera appelée à la première utilisation de l'API
+        # Vérifier la validité du token
+        self._check_token()
 
-    async def _check_token(self):
+    def _check_token(self):
         """Vérifier la validité du token en appelant l'API account/info"""
         url = f"{self.base_url}/account/info"
-        response = await self.json_response(
+        response = self.json_response(
             url,
             method='post',
             data={'apikey': self.api_key}
@@ -35,33 +34,28 @@ class Premiumize(BaseDebrid):
         
         logger.info("Premiumize API key is valid")
 
-    async def add_magnet(self, magnet, ip=None):
+    def add_magnet(self, magnet, ip=None):
         url = f"{self.base_url}/transfer/create?apikey={self.api_key}"
         
         # Vérifier si c'est un pack de saison
         info_hash = get_info_hash_from_magnet(magnet)
         is_season_pack = self._check_if_season_pack(magnet)
         
-        # Créer le dictionnaire de formulaire
-        form = {'src': magnet}
+        form = {
+            'src': magnet,
+            'folder_name': f"season_pack_{info_hash}" if is_season_pack else None
+        }
         
-        # Ajouter folder_name seulement si c'est un pack de saison
-        if is_season_pack:
-            form['folder_name'] = f"season_pack_{info_hash}"
-        
-        # Ajouter des logs pour le débogage
-        logger.debug(f"Premiumize: Sending add_magnet request with data: {form}")
-        
-        response = await self.json_response(url, method='post', data=form)
+        response = self.json_response(url, method='post', data=form)
         
         if is_season_pack and response and response.get("status") == "success":
             # Si c'est un pack de saison, on attend que tous les fichiers soient disponibles
             transfer_id = response.get("id")
             if transfer_id:
                 # Attendre que le transfert soit terminé
-                if await self._wait_for_season_pack(transfer_id):
+                if self._wait_for_season_pack(transfer_id):
                     # Une fois terminé, récupérer les détails du dossier
-                    folder_details = await self.get_folder_or_file_details(transfer_id)
+                    folder_details = self.get_folder_or_file_details(transfer_id)
                     if folder_details and folder_details.get("content"):
                         # Trier les fichiers par taille pour prendre le plus gros fichier vidéo
                         video_files = [f for f in folder_details["content"] 
@@ -98,11 +92,11 @@ class Premiumize(BaseDebrid):
         ]
         return any(indicator in name for indicator in season_indicators)
 
-    async def _wait_for_season_pack(self, transfer_id, timeout=300):
+    def _wait_for_season_pack(self, transfer_id, timeout=300):
         """Attend que tous les fichiers d'un pack de saison soient disponibles"""
         start_time = time.time()
         while time.time() - start_time < timeout:
-            transfer_info = await self.get_folder_or_file_details(transfer_id)
+            transfer_info = self.get_folder_or_file_details(transfer_id)
             if transfer_info and transfer_info.get("status") == "success":
                 # Vérifier si des fichiers vidéo sont présents
                 if transfer_info.get("content"):
@@ -110,42 +104,44 @@ class Premiumize(BaseDebrid):
                                  if f.get("mime_type", "").startswith("video/")]
                     if video_files:
                         return True
-            await asyncio.sleep(5)  # Utiliser asyncio.sleep au lieu de time.sleep
+            time.sleep(5)
         return False
 
-    async def add_torrent(self, torrent_file):
+    def add_torrent(self, torrent_file):
         url = f"{self.base_url}/transfer/create?apikey={self.api_key}"
         form = {'file': torrent_file}
-        return await self.json_response(url, method='post', data=form)
+        return self.json_response(url, method='post', data=form)
 
-    async def list_transfers(self):
+    def list_transfers(self):
         url = f"{self.base_url}/transfer/list?apikey={self.api_key}"
-        return await self.json_response(url)
+        return self.json_response(url)
 
-    async def get_folder_or_file_details(self, item_id, is_folder=True):
+    def get_folder_or_file_details(self, item_id, is_folder=True):
         if is_folder:
             logger.info(f"Getting folder details with id: {item_id}")
             url = f"{self.base_url}/folder/list?id={item_id}&apikey={self.api_key}"
         else:
             logger.info(f"Getting file details with id: {item_id}")
             url = f"{self.base_url}/item/details?id={item_id}&apikey={self.api_key}"
-            
-        return await self.json_response(url)
+        return self.json_response(url)
 
-    async def get_availability(self, hash):
+    def get_availability(self, hash):
         """Get availability for a single hash"""
+        if not hash:
+            return {"transcoded": [False]}
+
         url = f"{self.base_url}/cache/check?apikey={self.api_key}&items[]={hash}"
-        response = await self.json_response(url)
-        
+        response = self.json_response(url)
+
         if not response or response.get("status") != "success":
             logger.error("Invalid response from Premiumize API")
             return {"transcoded": [False]}
-        
+
         return {
             "transcoded": response.get("transcoded", [False])
         }
 
-    async def get_availability_bulk(self, hashes_or_magnets, ip=None):
+    def get_availability_bulk(self, hashes_or_magnets, ip=None):
         """Get availability for multiple hashes or magnets"""
         if not hashes_or_magnets:
             return {}
@@ -159,7 +155,7 @@ class Premiumize(BaseDebrid):
             params.append(f"items[]={hash}")
         
         url = f"{self.base_url}/cache/check"
-        response = await self.json_response(
+        response = self.json_response(
             url,
             method='post',
             data={
@@ -203,72 +199,39 @@ class Premiumize(BaseDebrid):
         logger.info(f"Got availability for {len(result)} items")
         return result
 
-    async def start_background_caching(self, magnet, query=None):
+    def start_background_caching(self, magnet, query=None):
         """Start caching a magnet link in the background."""
-        # Afficher le début du magnet dans les logs
-        if isinstance(magnet, str):
-            magnet_preview = magnet[:50] + "..." if len(magnet) > 50 else magnet
-            logger.info(f"Starting background caching for magnet: {magnet_preview}")
-        else:
-            logger.info(f"Starting background caching for magnet object: {type(magnet)}")
+        logger.info(f"Starting background caching for magnet")
         
         try:
-            # Extraire le magnet si c'est un dictionnaire
-            if isinstance(magnet, dict) and magnet.get("magnet"):
-                magnet = magnet.get("magnet")
-            
-            # Vérifier si c'est un pack de saison
-            info_hash = get_info_hash_from_magnet(magnet)
-            is_season_pack = self._check_if_season_pack(magnet)
-            
-            # Créer le dictionnaire de formulaire
-            form = {'src': magnet}
-            
-            # Ajouter folder_name seulement si c'est un pack de saison
-            if is_season_pack:
-                form['folder_name'] = f"season_pack_{info_hash}"
-            
-            # Ajouter l'apikey
-            url = f"{self.base_url}/transfer/create"
-            
-            # Ajouter des logs pour le débogage
-            logger.debug(f"Premiumize: Sending background caching request with data: {form}")
-            
-            response = await self.json_response(url, method='post', data={**form, 'apikey': self.api_key})
-            
-            if not response:
-                logger.error("Premiumize: Aucune réponse reçue de l'API pour start_background_caching")
-                return False
-            elif response.get("status") != "success":
-                logger.error(f"Premiumize: Échec du démarrage du caching en arrière-plan. Réponse: {response}")
+            # Create a transfer without waiting for completion
+            response = self.json_response(
+                f"{self.base_url}/transfer/create",
+                method="post",
+                data={"apikey": self.api_key, "src": magnet}
+            )
+
+            if not response or response.get("status") != "success":
+                logger.error("Failed to start background caching")
                 return False
 
             transfer_id = response.get("id")
             if not transfer_id:
-                logger.error("Premiumize: Aucun ID de transfert retourné")
+                logger.error("No transfer ID returned")
                 return False
 
-            logger.info(f"Premiumize: Démarrage réussi du caching en arrière-plan avec l'ID de transfert: {transfer_id}")
+            logger.info(f"Successfully started background caching with transfer ID: {transfer_id}")
             return True
         except Exception as e:
-            logger.error(f"Premiumize: Erreur lors du démarrage du caching en arrière-plan: {str(e)}")
+            logger.error(f"Error starting background caching: {str(e)}")
             return False
 
-    async def get_stream_link(self, query, config, ip=None):
+    def get_stream_link(self, query, config, ip=None):
         """Get a stream link for a magnet link"""
         if not query:
-            logger.warning("Premiumize: Aucun query fourni pour get_stream_link")
             return None
             
-        # Afficher le début du magnet dans les logs
-        if isinstance(query, str):
-            query_preview = query[:50] + "..." if len(query) > 50 else query
-            logger.info(f"Premiumize: Récupération du lien de streaming pour le magnet: {query_preview}")
-        elif isinstance(query, dict) and query.get("magnet"):
-            magnet_preview = query["magnet"][:50] + "..." if len(query["magnet"]) > 50 else query["magnet"]
-            logger.info(f"Premiumize: Récupération du lien de streaming pour le magnet: {magnet_preview}")
-        else:
-            logger.info(f"Premiumize: Récupération du lien de streaming pour l'objet query: {type(query)}")
+        logger.info("Getting stream link for magnet")
         
         # Vérifier si c'est une série et extraire la saison/épisode
         season = None
@@ -294,7 +257,7 @@ class Premiumize(BaseDebrid):
 
         # Essayer d'abord le téléchargement direct
         try:
-            response = await self.json_response(
+            response = self.json_response(
                 f"{self.base_url}/transfer/directdl",
                 method="post",
                 data={"apikey": self.api_key, "src": magnet}
@@ -340,18 +303,10 @@ class Premiumize(BaseDebrid):
             # Continue avec la méthode standard si le téléchargement direct échoue
             
         # Si le téléchargement direct a échoué, essayer la méthode standard
-        logger.info(f"Premiumize: Tentative d'ajout du magnet: {magnet[:50]}...")
-        response = await self.add_magnet(magnet, ip)
-        
-        if not response:
-            logger.error("Premiumize: Aucune réponse reçue de l'API pour add_magnet")
+        response = self.add_magnet(magnet, ip)
+        if not response or response.get("status") != "success":
+            logger.error("Failed to add magnet")
             return None
-        elif response.get("status") != "success":
-            logger.error(f"Premiumize: Échec de l'ajout du magnet. Réponse: {response}")
-            return None
-        
-        logger.info(f"Premiumize: Magnet ajouté avec succès. ID: {response.get('id')}")
-
             
         # Récupérer l'ID du transfert
         transfer_id = response.get("id")
@@ -360,12 +315,12 @@ class Premiumize(BaseDebrid):
             return None
             
         # Attendre que le transfert soit terminé
-        if not await self._wait_for_season_pack(transfer_id):
+        if not self._wait_for_season_pack(transfer_id):
             logger.error("Transfer timed out")
             return None
             
         # Récupérer les détails du dossier
-        folder_details = await self.get_folder_or_file_details(transfer_id)
+        folder_details = self.get_folder_or_file_details(transfer_id)
         if not folder_details or not folder_details.get("content"):
             logger.error("No content in folder details")
             return None

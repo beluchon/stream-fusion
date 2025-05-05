@@ -1,12 +1,3 @@
-import sys
-import os
-
-# Add the project root directory (/app in the container) to the Python path
-# This assumes env.py is in /app/stream_fusion/services/postgresql/migrations/
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
 import asyncio
 from logging.config import fileConfig
 

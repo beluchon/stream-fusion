@@ -4,18 +4,17 @@ from urllib.parse import unquote
 
 from fastapi import HTTPException
 
-from stream_fusion.utils.debrid.base_debrid import BaseDebrid, format_log_data
+from stream_fusion.utils.debrid.base_debrid import BaseDebrid
 from stream_fusion.utils.general import season_episode_in_filename
 from stream_fusion.logging_config import logger
 from stream_fusion.settings import settings
 
 
 class AllDebrid(BaseDebrid):
-    def __init__(self, config, session=None):
-        super().__init__(config, session=session)
+    def __init__(self, config):
+        super().__init__(config)
         self.base_url = f"{settings.ad_base_url}/{settings.ad_api_version}/"
         self.agent = settings.ad_user_app
-        self.store_name = 'alldebrid'
 
     def get_headers(self):
         if settings.ad_unique_account:
@@ -31,67 +30,40 @@ class AllDebrid(BaseDebrid):
         else:
             return {"Authorization": f"Bearer {self.config.get('ADToken')}"}
 
-    async def add_magnet(self, magnet, ip=None):
+    def add_magnet(self, magnet, ip=None):
         url = f"{self.base_url}magnet/upload?agent={self.agent}"
         data = {"magnets[]": magnet}
-        return await self.json_response(url, method='post', headers=self.get_headers(), data=data)
+        return self.json_response(url, method='post', headers=self.get_headers(), data=data)
 
-    async def add_torrent(self, torrent_file, ip=None):
+    def add_torrent(self, torrent_file, ip=None):
         url = f"{self.base_url}magnet/upload/file?agent={self.agent}"
         files = {"files[]": (str(uuid.uuid4()) + ".torrent", torrent_file, 'application/x-bittorrent')}
-        return await self.json_response(url, method='post', headers=self.get_headers(), files=files)
+        return self.json_response(url, method='post', headers=self.get_headers(), files=files)
 
-    async def check_magnet_status(self, id, ip=None):
+    def check_magnet_status(self, id, ip=None):
         url = f"{self.base_url}magnet/status?agent={self.agent}&id={id}"
-        return await self.json_response(url, method='get', headers=self.get_headers())
+        return self.json_response(url, method='get', headers=self.get_headers())
 
-    async def unrestrict_link(self, link, ip=None):
+    def unrestrict_link(self, link, ip=None):
         url = f"{self.base_url}link/unlock?agent={self.agent}&link={link}"
-        return await self.json_response(url, method='get', headers=self.get_headers())
-        
-    def start_background_caching(self, query):
-        """Méthode factice pour éviter l'erreur dans handle_download.
-        
-        Cette méthode ne fait rien d'autre que retourner True pour indiquer que
-        le téléchargement en arrière-plan a été initié avec succès.
-        
-        Args:
-            query (dict): Les paramètres de la requête (non utilisés).
-            
-        Returns:
-            bool: Toujours True.
-        """
-        return True
+        return self.json_response(url, method='get', headers=self.get_headers())
 
-    async def get_stream_link(self, query, config, ip=None):
+    def get_stream_link(self, query, config, ip=None):
         magnet = query['magnet']
         stream_type = query['type']
         torrent_download = unquote(query["torrent_download"]) if query["torrent_download"] is not None else None
 
-        torrent_id = await self.add_magnet_or_torrent(magnet, torrent_download, ip)
+        torrent_id = self.add_magnet_or_torrent(magnet, torrent_download, ip)
         logger.info(f"AllDebrid: Torrent ID: {torrent_id}")
 
-        # Define an async helper function for the status check
-        async def _check_status():
-            status_data = await self.check_magnet_status(torrent_id, ip)
-            # Ensure status_data and nested keys exist before accessing
-            if status_data and 'data' in status_data and 'magnets' in status_data['data'] and 'status' in status_data['data']['magnets']:
-                 return status_data["data"]["magnets"]["status"] == "Ready"
-            
-            # Utiliser format_log_data pour limiter la taille des logs
-            logger.warning(f"Unexpected structure in check_magnet_status response: {format_log_data(status_data)}")
-            return False
-
-        # Pass the async helper function to wait_for_ready_status
-        # Utiliser un timeout plus court (15 secondes) pour éviter de faire attendre l'utilisateur trop longtemps
-        if not await self.wait_for_ready_status(_check_status, timeout=15):
-            logger.warning("AllDebrid: Torrent not ready, returning non-cached video URL")
-            # Marquer ce torrent comme non mis en cache mais toujours affichable
+        if not self.wait_for_ready_status(
+                lambda: self.check_magnet_status(torrent_id, ip)["data"]["magnets"]["status"] == "Ready"):
+            logger.error("AllDebrid: Torrent not ready, caching in progress.")
             return settings.no_cache_video_url
         logger.info("AllDebrid: Torrent is ready.")
 
         logger.info(f"AllDebrid: Retrieving data for torrent ID: {torrent_id}")
-        data = (await self.check_magnet_status(torrent_id, ip))["data"]
+        data = self.check_magnet_status(torrent_id, ip)["data"]
         logger.info(f"AllDebrid: Data retrieved for torrent ID")
 
         link = settings.no_cache_video_url
@@ -123,7 +95,7 @@ class AllDebrid(BaseDebrid):
 
         logger.info(f"AllDebrid: Retrieved link: {link}")
 
-        unlocked_link_data = await self.unrestrict_link(link, ip)
+        unlocked_link_data = self.unrestrict_link(link, ip)
 
         if not unlocked_link_data:
             logger.error("AllDebrid: Failed to unlock link.")
@@ -133,7 +105,7 @@ class AllDebrid(BaseDebrid):
 
         return unlocked_link_data["data"]["link"]
 
-    async def get_availability_bulk(self, hashes_or_magnets, ip=None):
+    def get_availability_bulk(self, hashes_or_magnets, ip=None):
         if len(hashes_or_magnets) == 0:
             logger.info("AllDebrid: No hashes to be sent.")
             return {"status": "success", "data": {"magnets": []}}
@@ -158,11 +130,11 @@ class AllDebrid(BaseDebrid):
 
         return {"status": "success", "data": {"magnets": result_magnets}}
 
-    async def add_magnet_or_torrent(self, magnet, torrent_download=None, ip=None):
+    def add_magnet_or_torrent(self, magnet, torrent_download=None, ip=None):
         torrent_id = ""
         if torrent_download is None:
             logger.info(f"AllDebrid: Adding magnet")
-            magnet_response = await self.add_magnet(magnet, ip)
+            magnet_response = self.add_magnet(magnet, ip)
             logger.info(f"AllDebrid: Add magnet response received")
 
             if not magnet_response or "status" not in magnet_response or magnet_response["status"] != "success":
@@ -171,14 +143,11 @@ class AllDebrid(BaseDebrid):
             torrent_id = magnet_response["data"]["magnets"][0]["id"]
         else:
             logger.info(f"AllDebrid: Downloading torrent file")
-            # Assuming download_torrent_file uses requests or similar sync library, needs adjustment
-            # For now, let's assume it becomes async or is run in executor
-            # If it's pure sync IO, it might block the event loop. Needs checking.
-            torrent_file = await self.download_torrent_file(torrent_download) # Placeholder await
+            torrent_file = self.download_torrent_file(torrent_download)
             logger.info(f"AllDebrid: Torrent file downloaded")
 
             logger.info(f"AllDebrid: Adding torrent file")
-            upload_response = await self.add_torrent(torrent_file, ip)
+            upload_response = self.add_torrent(torrent_file, ip)
             logger.info(f"AllDebrid: Add torrent file response received")
 
             if not upload_response or "status" not in upload_response or upload_response["status"] != "success":
