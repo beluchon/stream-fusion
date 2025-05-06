@@ -453,6 +453,13 @@ class TorrentSmartContainer:
                 # Récupérer les fichiers du torrent
                 files = result.get("files", [])
                 
+                # Détecter si c'est un pack de saison (plus de 5 fichiers vidéo)
+                video_files = [f for f in files if f.get("name", "").lower().endswith((".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm"))]
+                is_season_pack = item.type == "series" and len(video_files) > 5
+                
+                if is_season_pack:
+                    self.logger.info(f"TorrentSmartContainer: Détection d'un pack de saison avec {len(video_files)} fichiers vidéo pour {item.raw_title}")
+                
                 if item.type == "series":
                     # Traiter les fichiers pour les séries
                     self.logger.debug(
@@ -460,28 +467,132 @@ class TorrentSmartContainer:
                     )
                     matching_files = []
                     
-                    for file in files:
-                        file_name = file.get("name", "")
-                        # Extraire les valeurs numériques de la saison et de l'épisode
-                        clean_season = media.season.replace("S", "")
-                        clean_episode = media.episode.replace("E", "")
+                    # Extraire les valeurs numériques de la saison et de l'épisode
+                    clean_season = media.season.replace("S", "")
+                    clean_episode = media.episode.replace("E", "")
+                    
+                    try:
                         numeric_season = int(clean_season)
                         numeric_episode = int(clean_episode)
-                        # Appeler la fonction avec les bons arguments
-                        if season_episode_in_filename(file_name, numeric_season, numeric_episode):
-                            file_info = {
-                                "file_index": file.get("index", 0),
-                                "title": file_name,
-                                "size": file.get("size", 0),
-                            }
-                            matching_files.append(file_info)
+                        
+                        for file in files:
+                            file_name = file.get("name", "").lower()
+                            file_path = file.get("path", file_name).lower()
+                            
+                            # Méthode 1: Utiliser season_episode_in_filename
+                            if season_episode_in_filename(file_name, numeric_season, numeric_episode):
+                                file_info = {
+                                    "file_index": file.get("index", 0),
+                                    "title": file_name,
+                                    "size": file.get("size", 0),
+                                }
+                                matching_files.append(file_info)
+                                self.logger.debug(f"TorrentSmartContainer: Match via season_episode_in_filename: {file_name}")
+                                continue
+                                
+                            # Méthode 2: Vérifier les patterns communs dans le nom du fichier
+                            season_str = f"s{str(numeric_season).zfill(2)}"
+                            episode_str = f"e{str(numeric_episode).zfill(2)}"
+                            
+                            if season_str in file_name and episode_str in file_name:
+                                file_info = {
+                                    "file_index": file.get("index", 0),
+                                    "title": file_name,
+                                    "size": file.get("size", 0),
+                                }
+                                matching_files.append(file_info)
+                                self.logger.debug(f"TorrentSmartContainer: Match via pattern s/e: {file_name}")
+                                continue
+                                
+                            # Méthode 3: Format numérique combiné (ex: 103 pour S01E03)
+                            if numeric_season < 10:  # Seulement pour les saisons 1-9
+                                combined_pattern = f"{numeric_season}{str(numeric_episode).zfill(2)}"
+                                if combined_pattern in file_name:
+                                    file_info = {
+                                        "file_index": file.get("index", 0),
+                                        "title": file_name,
+                                        "size": file.get("size", 0),
+                                    }
+                                    matching_files.append(file_info)
+                                    self.logger.debug(f"TorrentSmartContainer: Match via pattern numérique: {file_name}")
+                                    continue
+                            
+                            # Méthode 4: Recherche par numéro d'épisode uniquement
+                            # Par exemple "Episode.3" ou "E3"
+                            simple_ep_patterns = [
+                                f"episode.{numeric_episode}",
+                                f"episode {numeric_episode}",
+                                f"e{numeric_episode}.",
+                                f"e{numeric_episode} ",
+                                f"e{str(numeric_episode).zfill(2)}",
+                                f"_{numeric_episode}.",
+                                f".{numeric_episode}.",
+                            ]
+                            
+                            if any(pattern in file_name for pattern in simple_ep_patterns):
+                                # Vérifier que le même fichier ne contient pas d'autres numéros d'épisode
+                                other_ep_found = False
+                                for other_ep in range(1, 20):  # Vérifier les épisodes 1-19
+                                    if other_ep != numeric_episode:
+                                        other_patterns = [
+                                            f"episode.{other_ep}",
+                                            f"episode {other_ep}",
+                                            f"e{other_ep}.",
+                                            f"e{other_ep} ",
+                                            f"e{str(other_ep).zfill(2)}",
+                                            f"_{other_ep}.",
+                                            f".{other_ep}."
+                                        ]
+                                        if any(pattern in file_name for pattern in other_patterns):
+                                            other_ep_found = True
+                                            break
+                                
+                                if not other_ep_found:
+                                    file_info = {
+                                        "file_index": file.get("index", 0),
+                                        "title": file_name,
+                                        "size": file.get("size", 0),
+                                    }
+                                    matching_files.append(file_info)
+                                    self.logger.debug(f"TorrentSmartContainer: Match via pattern simple: {file_name}")
+                    
+                    except Exception as e:
+                        self.logger.error(f"TorrentSmartContainer: Error processing series files: {str(e)}")
                     
                     if matching_files:
                         # Utiliser le plus grand fichier correspondant
+                        largest_file = max(matching_files, key=lambda x: x["size"])
+                        self.logger.info(f"TorrentSmartContainer: Sélection du plus grand fichier correspondant: {largest_file['title']} (taille: {largest_file['size']})")
                         self._update_file_details(item, matching_files, debrid=debrid_code)
-                        self.logger.debug(
-                            f"TorrentSmartContainer: Updated series file details for {item.raw_title}"
-                        )
+                    else:
+                        self.logger.warning(f"TorrentSmartContainer: Aucun fichier correspondant trouvé pour S{clean_season}E{clean_episode} dans {item.raw_title}")
+                        
+                        # Si aucun fichier correspondant n'est trouvé mais que c'est un pack de saison,
+                        # sélectionner le plus grand fichier vidéo comme fallback
+                        if is_season_pack and video_files:
+                            # D'abord essayer de trouver des fichiers de la même saison
+                            season_files = []
+                            for file in video_files:
+                                file_name = file.get("name", "").lower()
+                                season_str = f"s{str(numeric_season).zfill(2)}"
+                                if season_str in file_name:
+                                    season_files.append({
+                                        "file_index": file.get("index", 0),
+                                        "title": file.get("name", ""),
+                                        "size": file.get("size", 0),
+                                    })
+                            
+                            file_infos = season_files if season_files else [
+                                {
+                                    "file_index": file.get("index", 0),
+                                    "title": file.get("name", ""),
+                                    "size": file.get("size", 0),
+                                }
+                                for file in video_files
+                            ]
+                            
+                            self.logger.warning(f"TorrentSmartContainer: Sélection du plus grand fichier vidéo comme fallback")
+                            self._update_file_details(item, file_infos, debrid=debrid_code)
                         
                 elif item.type == "movie":
                     # Traiter les fichiers pour les films
