@@ -379,38 +379,55 @@ class TorrentSmartContainer:
                                     
                                     if (numeric_season in file_info.get("seasons", []) and 
                                         numeric_episode in file_info.get("episodes", [])):
-                                        file_info = {
-                                            "file_index": file.get("file_index", 0),
-                                            "title": file_name,
-                                            "size": file.get("size", 0),
+                                        matched_file_info = {
+                                            "file_index": file_info.get("file_index", 0),
+                                            "title": file_info.get("file_name", ""),
+                                            "size": file_info.get("size", 0),
                                         }
-                                        self._update_file_details(item, [file_info], debrid="PM")
+                                        self._update_file_details(item, [matched_file_info], debrid="PM")
                                         self.logger.debug(
-                                            f"TorrentSmartContainer: Updated series file details for {item.raw_title}: {file_info}"
+                                            f"TorrentSmartContainer: Updated series file details for {item.raw_title}: {matched_file_info}"
                                         )
                                         break
-                    elif item.type == "movie":
-                        # Process movie files
-                        self.logger.debug(
-                            f"TorrentSmartContainer: Processing movie files for {item.raw_title}"
-                        )
-                        cached_files = [
-                            f for f in details["files"] if f.get("cached", False) is True
-                        ]
-                        if cached_files:
-                            # Find the largest cached file
-                            largest_file = max(
-                                cached_files, key=lambda f: f.get("size", 0)
-                            )
-                            file_info = {
-                                "file_index": largest_file.get("file_index", 0),
-                                "title": largest_file.get("title", ""),
-                                "size": largest_file.get("size", 0),
-                            }
-                            self._update_file_details(item, [file_info], debrid="PM")
+                        elif item.type == "movie":
+                            # Process movie files
                             self.logger.debug(
-                                f"TorrentSmartContainer: Updated movie file details for {item.raw_title}: {file_info}"
+                                f"TorrentSmartContainer: Processing movie files for {item.raw_title}"
                             )
+                            
+                            # Vérifier si nous avons des informations sur le fichier dans le status
+                            file_info = None
+                            
+                            # Si nous avons des fichiers dans le status
+                            if "files" in status:
+                                cached_files = [
+                                    f for f in status["files"] if f.get("cached", False) is True
+                                ]
+                                if cached_files:
+                                    # Find the largest cached file
+                                    largest_file = max(
+                                        cached_files, key=lambda f: f.get("size", 0)
+                                    )
+                                    file_info = {
+                                        "file_index": largest_file.get("file_index", 0),
+                                        "title": largest_file.get("title", ""),
+                                        "size": largest_file.get("size", 0),
+                                    }
+                            
+                            # Si nous n'avons pas d'infos de fichiers mais un nom de fichier et une taille
+                            if not file_info and "filename" in status and "filesize" in status:
+                                file_info = {
+                                    "file_index": 0,
+                                    "title": status.get("filename", ""),
+                                    "size": int(status.get("filesize", 0)),
+                                }
+                            
+                            # Si nous avons des informations sur le fichier, mettre à jour
+                            if file_info:
+                                self._update_file_details(item, [file_info], debrid="PM")
+                                self.logger.debug(
+                                    f"TorrentSmartContainer: Updated movie file details for {item.raw_title}: {file_info}"
+                                )
 
         self.logger.info(
             "TorrentSmartContainer: Premiumize availability update completed"
