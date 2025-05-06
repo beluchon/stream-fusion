@@ -73,25 +73,58 @@ def get_all_debrid_services(config):
                 logger.debug("Premiumize: service added to be use")
                 
         if service == "Debrid-Link":
-            debrid_service.append(DebridLink(config))
-            logger.debug("Debrid-Link: service added to be use")
+            if use_stremthru:
+                # Utiliser StremThru pour Debrid-Link
+                st = StremThru(config)
+                st.set_store_credentials("debridlink", config.get("DLToken", ""))
+                st.extension = "ST:DL"
+                debrid_service.append(st)
+                logger.debug("Debrid-Link (via StremThru): service added to be use")
+            else:
+                debrid_service.append(DebridLink(config))
+                logger.debug("Debrid-Link: service added to be use")
             
         if service == "EasyDebrid":
-            debrid_service.append(EasyDebrid(config))
-            logger.debug("EasyDebrid: service added to be use")
+            if use_stremthru:
+                # Utiliser StremThru pour EasyDebrid
+                st = StremThru(config)
+                st.set_store_credentials("easydebrid", config.get("EDToken", ""))
+                st.extension = "ST:ED"
+                debrid_service.append(st)
+                logger.debug("EasyDebrid (via StremThru): service added to be use")
+            else:
+                debrid_service.append(EasyDebrid(config))
+                logger.debug("EasyDebrid: service added to be use")
             
         if service == "Offcloud":
-            debrid_service.append(Offcloud(config))
-            logger.debug("Offcloud: service added to be use")
+            if use_stremthru:
+                # Utiliser StremThru pour Offcloud
+                st = StremThru(config)
+                st.set_store_credentials("offcloud", config.get("OCCredentials", ""))
+                st.extension = "ST:OC"
+                debrid_service.append(st)
+                logger.debug("Offcloud (via StremThru): service added to be use")
+            else:
+                debrid_service.append(Offcloud(config))
+                logger.debug("Offcloud: service added to be use")
             
         if service == "PikPak":
-            debrid_service.append(PikPak(config))
-            logger.debug("PikPak: service added to be use")
+            if use_stremthru:
+                # Utiliser StremThru pour PikPak
+                st = StremThru(config)
+                st.set_store_credentials("pikpak", config.get("PPCredentials", ""))
+                st.extension = "ST:PP"
+                debrid_service.append(st)
+                logger.debug("PikPak (via StremThru): service added to be use")
+            else:
+                debrid_service.append(PikPak(config))
+                logger.debug("PikPak: service added to be use")
             
     if not debrid_service:
         raise HTTPException(status_code=500, detail="Invalid service configuration.")
     
     return debrid_service
+
 
 def get_download_service(config):
     if not settings.download_service:
@@ -113,7 +146,7 @@ def get_download_service(config):
     
     # Vérifier si StremThru est activé
     use_stremthru = config.get('stremthru', False)
-        
+    
     if service == "Real-Debrid":
         if use_stremthru:
             st = StremThru(config)
@@ -139,12 +172,28 @@ def get_download_service(config):
             return st
         return Premiumize(config)
     elif service == "Debrid-Link":
+        if use_stremthru:
+            st = StremThru(config)
+            st.set_store_credentials("debridlink", config.get("DLToken", ""))
+            return st
         return DebridLink(config)
     elif service == "EasyDebrid":
+        if use_stremthru:
+            st = StremThru(config)
+            st.set_store_credentials("easydebrid", config.get("EDToken", ""))
+            return st
         return EasyDebrid(config)
     elif service == "Offcloud":
+        if use_stremthru:
+            st = StremThru(config)
+            st.set_store_credentials("offcloud", config.get("OCCredentials", ""))
+            return st
         return Offcloud(config)
     elif service == "PikPak":
+        if use_stremthru:
+            st = StremThru(config)
+            st.set_store_credentials("pikpak", config.get("PPCredentials", ""))
+            return st
         return PikPak(config)
     else:
         logger.error(f"Invalid download service: {service}")
@@ -186,12 +235,28 @@ def get_debrid_service(config, service):
             return st
         return Premiumize(config)
     elif service == "DL":
+        if use_stremthru:
+            st = StremThru(config)
+            st.set_store_credentials("debridlink", config.get("DLToken", ""))
+            return st
         return DebridLink(config)
     elif service == "ED":
+        if use_stremthru:
+            st = StremThru(config)
+            st.set_store_credentials("easydebrid", config.get("EDToken", ""))
+            return st
         return EasyDebrid(config)
     elif service == "OC":
+        if use_stremthru:
+            st = StremThru(config)
+            st.set_store_credentials("offcloud", config.get("OCCredentials", ""))
+            return st
         return Offcloud(config)
     elif service == "PP":
+        if use_stremthru:
+            st = StremThru(config)
+            st.set_store_credentials("pikpak", config.get("PPCredentials", ""))
+            return st
         return PikPak(config)
     elif service == "ST":
         return get_download_service(config)

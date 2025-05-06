@@ -17,9 +17,37 @@ class StremThru(BaseDebrid):
         self.token = None
         self.session = self._create_session()
         
+        # Si aucun store n'est spécifié, tenter une détection automatique
+        if not self.store_name:
+            self.auto_detect_store()
+        
     def _create_session(self):
         session = super()._create_session()
         return session
+    
+    def auto_detect_store(self):
+        """Tente de détecter automatiquement le debrideur à utiliser en fonction des tokens disponibles"""
+        # Priorité: RD > PM > TB > AD > DL > ED > OC > PP
+        priority_order = [
+            ("realdebrid", "RDToken"),
+            ("premiumize", "PMToken"),
+            ("torbox", "TBToken"),
+            ("alldebrid", "ADToken"),
+            ("debridlink", "DLToken"),
+            ("easydebrid", "EDToken"),
+            ("offcloud", "OCCredentials"),
+            ("pikpak", "PPCredentials")
+        ]
+        
+        for store_name, token_key in priority_order:
+            token = self.config.get(token_key)
+            if token and len(token.strip()) > 5:  # Token valide (au moins 6 caractères)
+                logger.info(f"StremThru: Utilisation automatique de {store_name} détecté avec le token {token_key}")
+                self.set_store_credentials(store_name, token)
+                break
+        
+        if not self.store_name:
+            logger.warning("StremThru: Aucun debrideur détecté automatiquement")
     
     def set_store_credentials(self, store_name, token):
         """Configure les informations d'identification du store pour StremThru"""
@@ -34,10 +62,10 @@ class StremThru(BaseDebrid):
         """Retourne le code du service de debrid sous-jacent (RD, AD, TB, PM, etc.)
         
         Args:
-            store_name (str, optional): Nom du store. Si None, retourne AD par défaut.
+            store_name (str, optional): Nom du store. Si None, retourne None.
         
         Returns:
-            str: Code du service de debrid (RD, AD, TB, PM, etc.)
+            str: Code du service de debrid (RD, AD, TB, PM, etc.) ou None si non identifié
         """
         # Mapping des noms de stores vers les codes de debrid
         debrid_codes = {
@@ -51,8 +79,8 @@ class StremThru(BaseDebrid):
             "pikpak": "PK",      # PikPak
         }
         
-        # Retourner le code correspondant ou AD par défaut
-        return debrid_codes.get(store_name, "AD")
+        # Retourner le code correspondant ou None si non identifié
+        return debrid_codes.get(store_name)
         
     def parse_store_creds(self, token):
         """Parse les informations d'identification du store"""
@@ -119,7 +147,10 @@ class StremThru(BaseDebrid):
                                     results.append({
                                         "hash": hash_value,
                                         "status": "cached",
-                                        "files": item.get("files", [])
+                                        "files": item.get("files", []),
+                                        # Ajouter le store_name pour que le container puisse identifier le service
+                                        "store_name": self.store_name,
+                                        "debrid": StremThru.get_underlying_debrid_code(self.store_name)
                                     })
                                     # Log pour débogage
                                     logger.debug(f"Magnet caché trouvé sur StremThru-{self.store_name}: {hash_value}")
@@ -246,6 +277,15 @@ class StremThru(BaseDebrid):
         try:
             logger.debug(f"StremThru: Génération d'un lien de streaming pour {query}")
             
+            # Si aucun store n'est défini, tenter la détection automatique
+            if not self.store_name:
+                self.auto_detect_store()
+                
+                # Si toujours aucun store après détection, impossible de continuer
+                if not self.store_name:
+                    logger.error("StremThru: Aucun debrideur configuré pour StremThru")
+                    return None
+            
             # Extraire les informations nécessaires de la requête
             # Vérifier si la requête contient un magnet ou un infoHash
             magnet_url = query.get("magnet")
@@ -272,7 +312,7 @@ class StremThru(BaseDebrid):
                 
             # Ajouter directement le magnet à StremThru sans vérifier s'il est disponible
             magnet = magnet_url or f"magnet:?xt=urn:btih:{info_hash}"
-            logger.debug(f"StremThru: Ajout direct du magnet {magnet}")
+            logger.debug(f"StremThru: Ajout direct du magnet {magnet} via le store {self.store_name}")
             magnet_info = self.add_magnet(magnet, ip)
             
             if not magnet_info:

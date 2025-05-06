@@ -177,11 +177,26 @@ class TorrentSmartContainer:
             self._update_availability_torbox(debrid_response, media)
         elif debrid_type is Premiumize:
             self._update_availability_premiumize(debrid_response)
-        elif debrid_type is StremThru:
-            # Utiliser la méthode statique pour obtenir le code du service sous-jacent
-            # Par défaut, nous utilisons AllDebrid (AD)
-            # Les logs montrent "StremThru-alldebrid" donc nous savons que c'est AllDebrid
-            underlying_debrid = StremThru.get_underlying_debrid_code("alldebrid")
+        elif debrid_type is StremThru or debrid_type.__name__ == "StremThru":
+            # Récupérer l'instance depuis le tableau de debrid_response
+            if debrid_response and isinstance(debrid_response[0], dict) and "store_name" in debrid_response[0]:
+                store_name = debrid_response[0]["store_name"]
+            else:
+                # Tenter de récupérer depuis le Logger
+                try:
+                    log_entries = [line for line in self.logger.get_entries() if "StremThru: Vérification de" in line and "magnets sur StremThru-" in line]
+                    if log_entries:
+                        latest_log = log_entries[-1]
+                        store_name = latest_log.split("StremThru-")[-1].strip()
+                    else:
+                        # Fallback sur les stores courants si on ne peut pas détecter
+                        store_name = "torbox" if "TBToken" in str(debrid_response) else "alldebrid"
+                except:
+                    # Fallback sur "torbox" s'il y a TB dans les logs
+                    store_name = "torbox" if "TBToken" in str(debrid_response) else "alldebrid"
+            
+            underlying_debrid = StremThru.get_underlying_debrid_code(store_name)
+            self.logger.debug(f"TorrentSmartContainer: StremThru utilise le store: {store_name}, code: {underlying_debrid}")
             self._update_availability_stremthru(debrid_response, media, underlying_debrid)
         else:
             self.logger.error(
@@ -405,9 +420,18 @@ class TorrentSmartContainer:
         self.logger.info(f"TorrentSmartContainer: Updating StremThru availability (via {underlying_debrid})")
         for result in response:
             hash_value = result.get("hash", "").lower()
+            
+            # Utiliser le code debrid fourni par StremThru si disponible
+            result_debrid = result.get("debrid")
+            if result_debrid:
+                debrid_code = result_debrid
+                self.logger.debug(f"TorrentSmartContainer: Utilisation du code debrid spécifique: {debrid_code} pour {hash_value}")
+            else:
+                debrid_code = underlying_debrid
+            
             if hash_value in self.__itemsDict:
                 item = self.__itemsDict[hash_value]
-                item.availability = underlying_debrid  # Utiliser le code du service sous-jacent
+                item.availability = debrid_code  # Utiliser le code du service spécifique à ce résultat
                 
                 # Récupérer les fichiers du torrent
                 files = result.get("files", [])
@@ -437,7 +461,7 @@ class TorrentSmartContainer:
                     
                     if matching_files:
                         # Utiliser le plus grand fichier correspondant
-                        self._update_file_details(item, matching_files, debrid=underlying_debrid)
+                        self._update_file_details(item, matching_files, debrid=debrid_code)
                         self.logger.debug(
                             f"TorrentSmartContainer: Updated series file details for {item.raw_title}"
                         )
@@ -458,7 +482,7 @@ class TorrentSmartContainer:
                             }
                             for file in files
                         ]
-                        self._update_file_details(item, file_infos, debrid=underlying_debrid)
+                        self._update_file_details(item, file_infos, debrid=debrid_code)
                         self.logger.debug(
                             f"TorrentSmartContainer: Updated movie file details for {item.raw_title}"
                         )
