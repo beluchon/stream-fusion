@@ -287,6 +287,16 @@ class StremThru(BaseDebrid):
                     return None
             
             # Extraire les informations nécessaires de la requête
+            # Extraire le type de stream (film ou série)
+            stream_type = query.get('type')
+            if not stream_type:
+                logger.error("StremThru: Le type de média n'est pas défini dans la requête")
+                return None
+                
+            # Extraire la saison et l'épisode pour les séries
+            season = query.get("season")
+            episode = query.get("episode")
+            
             # Vérifier si la requête contient un magnet ou un infoHash
             magnet_url = query.get("magnet")
             info_hash = query.get("infoHash")
@@ -354,32 +364,118 @@ class StremThru(BaseDebrid):
             if not target_file:
                 logger.debug(f"StremThru: Fichier avec index {file_idx} non trouvé, recherche du plus gros fichier")
                 video_files = []
+                
                 for file in magnet_data["files"]:
                     file_name = file.get("name", "").lower()
+                    
                     # Vérifier si c'est un fichier vidéo
-                    if any(ext in file_name for ext in [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm"]):
+                    is_video = any(ext in file_name for ext in [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm"])
+                    
+                    if is_video:
+                        # Pour les séries, essayer de trouver l'épisode correspondant
+                        if stream_type == "series" and season and episode:
+                            from stream_fusion.utils.general import season_episode_in_filename
+                            
+                            try:
+                                numeric_season = int(season.replace("S", ""))
+                                numeric_episode = int(episode.replace("E", ""))
+                                
+                                # Méthode 1: Utiliser season_episode_in_filename
+                                if season_episode_in_filename(file_name, numeric_season, numeric_episode):
+                                    logger.debug(f"StremThru: Épisode correspondant trouvé: {file_name}")
+                                    video_files.append(file)
+                                    continue
+                                
+                                # Méthode 2: Recherche de patterns comme s01e03
+                                season_str = f"s{str(numeric_season).zfill(2)}"
+                                episode_str = f"e{str(numeric_episode).zfill(2)}"
+                                if season_str in file_name and episode_str in file_name:
+                                    logger.debug(f"StremThru: Épisode correspondant via pattern s/e: {file_name}")
+                                    video_files.append(file)
+                                    continue
+                                
+                                # Méthode 3: Format numérique combiné (ex: 103 pour S01E03)
+                                if numeric_season < 10:  # Seulement pour les saisons 1-9
+                                    combined_pattern = f"{numeric_season}{str(numeric_episode).zfill(2)}"
+                                    if combined_pattern in file_name:
+                                        logger.debug(f"StremThru: Épisode correspondant via pattern numérique: {file_name}")
+                                        video_files.append(file)
+                                        continue
+                                
+                                # Méthode 4: Recherche par numéro d'épisode dans un fichier de la saison
+                                if season_str in file_name:
+                                    simple_ep_patterns = [
+                                        f"episode.{numeric_episode}",
+                                        f"episode {numeric_episode}",
+                                        f"e{numeric_episode}.",
+                                        f"e{numeric_episode} ",
+                                        f"e{str(numeric_episode).zfill(2)}",
+                                        f"_{numeric_episode}.",
+                                        f".{numeric_episode}.",
+                                    ]
+                                    if any(pattern in file_name for pattern in simple_ep_patterns):
+                                        logger.debug(f"StremThru: Épisode correspondant via pattern simple: {file_name}")
+                                        video_files.append(file)
+                                        continue
+                            except Exception as e:
+                                logger.warning(f"StremThru: Erreur lors de la détection d'épisode: {str(e)}")
+                        
+                        # Si nous n'avons pas trouvé d'épisode spécifique ou c'est un film, ajouter tous les fichiers vidéo
                         video_files.append(file)
                 
                 if video_files:
                     # Trier par taille décroissante
                     target_file = sorted(video_files, key=lambda x: x.get("size", 0), reverse=True)[0]
-                    logger.debug(f"StremThru: Sélection du plus gros fichier vidéo: {target_file.get('name')}")
+                    
+                    # Pour les séries, préférer les fichiers qui ont une correspondance avec la saison/épisode si disponible
+                    if stream_type == "series" and season and episode:
+                        for file in video_files:
+                            file_name = file.get("name", "").lower()
+                            if f"s{season.replace('S', '')}" in file_name and f"e{episode.replace('E', '')}" in file_name:
+                                target_file = file
+                                logger.debug(f"StremThru: Sélection du fichier correspondant à S{season}E{episode}: {file_name}")
+                                break
+                    
+                    logger.debug(f"StremThru: Sélection du fichier vidéo: {target_file.get('name')}")
                 else:
                     # Si aucun fichier vidéo, prendre le premier fichier
                     target_file = magnet_data["files"][0] if magnet_data["files"] else None
-                    
+            
             if not target_file or "link" not in target_file:
                 logger.error(f"StremThru: Fichier cible non trouvé ou sans lien")
                 return None
                 
+            # Générer un identifiant unique pour ce torrent, fichier et épisode
+            torrent_id = magnet_info.get("id", "")
+            file_id = target_file.get("index", "")
+            
+            # Log détaillé pour le débogage
+            if stream_type == "series" and season and episode:
+                logger.info(f"StremThru: Sélection de S{season}E{episode} dans le torrent {torrent_id}, fichier index {file_id}")
+            else:
+                logger.info(f"StremThru: Sélection du fichier {file_id} dans le torrent {torrent_id}")
+            
             # Générer le lien de streaming
             client_ip_param = f"?client_ip={ip}" if ip else ""
             url = f"{self.base_url}/link/generate{client_ip_param}"
             
-            logger.debug(f"StremThru: Génération du lien pour {target_file.get('name')}")
+            # Créer un identifiant unique pour ce fichier spécifique
+            # Cela évite les problèmes de cache qui pourraient sélectionner le mauvais fichier
+            unique_id = ""
+            if stream_type == "series" and season and episode:
+                # Pour les séries, inclure saison et épisode dans l'ID unique
+                unique_id = f"_s{season.replace('S', '')}_e{episode.replace('E', '')}"
+            
+            logger.debug(f"StremThru: Génération du lien pour {target_file.get('name')}{unique_id}")
+            
+            # Ajouter l'identifiant unique à la requête pour garantir que nous obtenons
+            # un lien unique pour chaque épisode d'une série
+            json_data = {"link": target_file["link"]}
+            if unique_id:
+                json_data["uniqueId"] = unique_id
             
             # Utiliser directement la session avec json=data au lieu de data=data
-            response = self.session.post(url, json={"link": target_file["link"]})
+            response = self.session.post(url, json=json_data)
             
             if response.status_code in [200, 201]:
                 try:
