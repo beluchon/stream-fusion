@@ -25,6 +25,10 @@ class TorrentSmartContainer:
             torrent_items
         )
         self.__media = media
+        # Variable d'utilisation de StremThru maintenue pour la rétrocompatibilité
+        self.__using_stremthru = False
+        # Log pour indiquer que tous les torrents sont inclus
+        self.logger.info("TorrentSmartContainer: Including all torrents regardless of seeders count")
 
     def get_unaviable_hashes(self):
         hashes = []
@@ -90,11 +94,12 @@ class TorrentSmartContainer:
                             "TorrentSmartContainer: No matching file found, item not added to best matching"
                         )
             else:
-                if not (( not torrent_item.availability or torrent_item.availability == "DL" ) and torrent_item.indexer == "DMM - API"):
-                    best_matching.append(torrent_item)
-                    self.logger.trace(
-                        "TorrentSmartContainer: Item added to best matching (magnet link)"
-                    )
+                # Toujours inclure tous les torrents DMM - API et autres
+                best_matching.append(torrent_item)
+                seeders_info = f"with {torrent_item.seeders} seeders" if torrent_item.seeders is not None else "with unknown seeders"
+                self.logger.trace(
+                    f"TorrentSmartContainer: Item added to best matching (magnet link) - {seeders_info}"
+                )
         self.logger.success(
             f"TorrentSmartContainer: Found {len(best_matching)} best matching items"
         )
@@ -178,6 +183,9 @@ class TorrentSmartContainer:
         elif debrid_type is Premiumize:
             self._update_availability_premiumize(debrid_response)
         elif debrid_type is StremThru or debrid_type.__name__ == "StremThru":
+            # Marquer que StremThru est utilisé
+            self.__using_stremthru = True
+            
             # Récupérer l'instance depuis le tableau de debrid_response
             if debrid_response and isinstance(debrid_response[0], dict) and "store_name" in debrid_response[0]:
                 store_name = debrid_response[0]["store_name"]
