@@ -305,6 +305,11 @@ async def get_results(
                         count = len(result.items())
                     else:  # Si c'est une liste (comme pour StremThru)
                         count = len(result)
+                    
+                    # Déterminer si c'est StremThru pour ajuster la durée du cache
+                    is_stremthru = (type(debrid).__name__ == "StremThru" or 
+                                   hasattr(debrid, 'store_name') and getattr(debrid, 'store_name', None) is not None)
+                    
                     logger.info(
                         f"Search: Checked availability for {count} items with {type(debrid).__name__}"
                     )
@@ -329,7 +334,23 @@ async def get_results(
 
     stream_list = stream_processing(search_results, media, config)
     streams = [Stream(**stream) for stream in stream_list]
-    await redis_cache.set(stream_cache_key(media), streams, expiration=1200)
+    
+    # Définir la durée d'expiration par défaut à 1200 secondes
+    expiration_time = 1200
+    
+    # Vérifier si StremThru est utilisé pour ajuster la durée du cache
+    has_stremthru = False
+    for debrid in debrid_services:
+        if type(debrid).__name__ == "StremThru" or hasattr(debrid, 'store_name'):
+            has_stremthru = True
+            break
+    
+    # Si StremThru est utilisé, utiliser la durée de cache spécifique
+    if has_stremthru:
+        expiration_time = 60
+        logger.info(f"Search: Using reduced cache expiration time of {expiration_time} seconds for StremThru")
+    
+    await redis_cache.set(stream_cache_key(media), streams, expiration=expiration_time)
     total_time = time.time() - start
     logger.info(f"Search: Request completed in {total_time:.2f} seconds")
     return SearchResponse(streams=streams)
