@@ -1,10 +1,11 @@
 import requests
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 from pydantic import BaseModel, ConfigDict, Field
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from stream_fusion.settings import settings
 from stream_fusion.logging_config import logger
+import time
 
 class DMMQueryRequest(BaseModel):
     queryText: Optional[str] = None
@@ -101,16 +102,74 @@ class ZileanAPI:
         )
         self.session.mount("http://", adapter)
         self.session.mount("https://", adapter)
+        
+        # Cache pour les résultats de recherche
+        self._cache: Dict[str, Dict[str, Any]] = {}
+        self._cache_ttl = 900  # 15 minutes en secondes
 
-    def _request(self, method: str, endpoint: str, **kwargs):
+    def _get_cache_key(self, method: str, endpoint: str, **kwargs) -> str:
+        """Génère une clé de cache unique basée sur la méthode, l'endpoint et les paramètres."""
+        params_str = "&".join(f"{k}={v}" for k, v in sorted(kwargs.items()) if v is not None)
+        return f"{method}:{endpoint}:{params_str}"
+
+    def _get_from_cache(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        """Récupère les données du cache si elles existent et sont valides."""
+        if cache_key in self._cache:
+            cached_data = self._cache[cache_key]
+            if time.time() - cached_data["timestamp"] < self._cache_ttl:
+                return cached_data["data"]
+            # Nettoyer les entrées expirées
+            del self._cache[cache_key]
+        return None
+
+    def _add_to_cache(self, cache_key: str, data: Any) -> None:
+        """Ajoute des données au cache avec un timestamp."""
+        self._cache[cache_key] = {
+            "data": data,
+            "timestamp": time.time()
+        }
+        
+        # Nettoyer le cache si trop volumineux (garder max 100 entrées)
+        if len(self._cache) > 100:
+            # Supprimer la plus ancienne entrée
+            oldest_key = min(self._cache.keys(), key=lambda k: self._cache[k]["timestamp"])
+            del self._cache[oldest_key]
+
+    def _request(self, method: str, endpoint: str, cache: bool = True, **kwargs):
+        """
+        Effectue une requête HTTP avec gestion de cache.
+        
+        :param method: Méthode HTTP (GET, POST, etc.)
+        :param endpoint: Point d'accès API
+        :param cache: Activer/désactiver le cache pour cette requête
+        :param kwargs: Arguments supplémentaires pour la requête
+        :return: Réponse HTTP
+        """
         url = f"{self.base_url}{endpoint}"
         headers = kwargs.pop("headers", {})
         headers.update(
             {"accept": "application/json", "Content-Type": "application/json"}
         )
+        
+        # Vérifier le cache pour les requêtes GET si activé
+        if cache and method.upper() == "GET":
+            cache_key = self._get_cache_key(method, endpoint, **kwargs)
+            cached_data = self._get_from_cache(cache_key)
+            if cached_data:
+                return type('CachedResponse', (), {'json': lambda: cached_data, 'text': str(cached_data)})
+        
         try:
             response = self.session.request(method, url, headers=headers, **kwargs)
             response.raise_for_status()
+            
+            # Mettre en cache les résultats pour les requêtes GET si activé
+            if cache and method.upper() == "GET":
+                try:
+                    cache_key = self._get_cache_key(method, endpoint, **kwargs)
+                    self._add_to_cache(cache_key, response.json())
+                except Exception as e:
+                    logger.warning(f"Impossible de mettre en cache la réponse: {e}")
+                    
             return response
         except requests.exceptions.RequestException as e:
             logger.error(f"Erreur lors de la requête API : {e}")
@@ -152,10 +211,10 @@ class ZileanAPI:
         return [self._convert_to_dmm_torrent_info(entry) for entry in response.json()]
 
     def dmm_on_demand_scrape(self) -> None:
-        self._request("GET", "/dmm/on-demand-scrape")
+        self._request("GET", "/dmm/on-demand-scrape", cache=False)
 
     def healthchecks_ping(self) -> str:
-        response = self._request("GET", "/healthchecks/ping")
+        response = self._request("GET", "/healthchecks/ping", cache=False)
         return response.text
 
     def imdb_search(
