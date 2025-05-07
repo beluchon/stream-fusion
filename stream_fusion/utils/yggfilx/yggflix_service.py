@@ -46,7 +46,7 @@ class YggflixService:
 
     def __filter_out_no_seeders(self, results: List[dict]) -> List[dict]:
         """Filter out results with less than 5 seeders."""
-        return [result for result in results if result.get("seeders", 0) >= 5]
+        return [result for result in results if result.get("seeders", 0) >= 0]
 
     def __process_download_link(self, id: int) -> str:
         """Generate the download link for a given torrent."""
