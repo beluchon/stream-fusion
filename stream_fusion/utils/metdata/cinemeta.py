@@ -18,6 +18,7 @@ class Cinemeta(MetadataProvider):
         if type == "movie":
             result = Movie(
                 id=id,
+                tmdb_id=None,
                 titles=[self.replace_weird_characters(data["meta"]["name"])],
                 year=data["meta"]["year"],
                 languages=["en"]
@@ -25,6 +26,7 @@ class Cinemeta(MetadataProvider):
         else:
             result = Series(
                 id=id,
+                tmdb_id=None,
                 titles=[self.replace_weird_characters(data["meta"]["name"])],
                 season="S{:02d}".format(int(full_id[1])),
                 episode="E{:02d}".format(int(full_id[2])),
