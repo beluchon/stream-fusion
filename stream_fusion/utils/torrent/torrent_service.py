@@ -137,12 +137,31 @@ class TorrentService:
         return result
 
     def __process_torrent(self, result: TorrentItem, torrent_file):
-        metadata = bencode.bdecode(torrent_file)
+        try:
+            metadata = bencode.bdecode(torrent_file)
+        except Exception as e:
+            try:
+                from bencodepy import Decoder
+                decoder = Decoder(encoding='latin-1') 
+                metadata = decoder.decode(torrent_file)
+            except Exception as inner_e:
+                logger.error(f"Impossible de décoder le fichier torrent: {str(e)} puis {str(inner_e)}")
+                result.torrent_download = result.link
+                result.trackers = []
+                result.info_hash = ""
+                result.magnet = ""
+                return result
 
         result.torrent_download = result.link
-        result.trackers = self.__get_trackers_from_torrent(metadata)
-        result.info_hash = self.__convert_torrent_to_hash(metadata["info"])
-        result.magnet = self.__build_magnet(result.info_hash, metadata["info"]["name"], result.trackers)
+        try:
+            result.trackers = self.__get_trackers_from_torrent(metadata)
+            result.info_hash = self.__convert_torrent_to_hash(metadata["info"])
+            result.magnet = self.__build_magnet(result.info_hash, metadata["info"]["name"], result.trackers)
+        except Exception as e:
+            logger.error(f"Erreur lors du traitement des métadonnées du torrent: {str(e)}")
+            result.trackers = []
+            result.info_hash = ""
+            result.magnet = ""
 
         if "files" not in metadata["info"]:
             result.file_index = 1
