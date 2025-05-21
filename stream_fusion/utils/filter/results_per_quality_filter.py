@@ -1,7 +1,6 @@
 from stream_fusion.utils.filter.base_filter import BaseFilter
 from stream_fusion.logging_config import logger
 
-#TODO: Check if this filter is still needed and RTN changes for it.
 class ResultsPerQualityFilter(BaseFilter):
     def __init__(self, config):
         super().__init__(config)
@@ -18,30 +17,27 @@ class ResultsPerQualityFilter(BaseFilter):
             resolution_groups[resolution].append(item)
         
         sort_method = self.config.get('sort', '')
-        for resolution, items in resolution_groups.items():
-            if sort_method == 'sizedesc':
-                sorted_items = sorted(items, key=lambda x: int(x.size), reverse=True)
-                logger.debug(f"ResultsPerQualityFilter: Sorting {len(items)} items for resolution {resolution} by size descending")
-            elif sort_method == 'sizeasc':
-                sorted_items = sorted(items, key=lambda x: int(x.size))
-                logger.debug(f"ResultsPerQualityFilter: Sorting {len(items)} items for resolution {resolution} by size ascending")
-            elif sort_method == 'quality':
-                sorted_items = sorted(items, key=lambda x: x.seeders if x.seeders is not None else 0, reverse=True)
-                logger.debug(f"ResultsPerQualityFilter: Sorting {len(items)} items for resolution {resolution} by seeds (quality option)")
-            elif sort_method == 'qualitythensize':
-                sorted_items = sorted(items, key=lambda x: int(x.size), reverse=True)
-                logger.debug(f"ResultsPerQualityFilter: Sorting {len(items)} items for resolution {resolution} by size descending (quality then size option)")
-            else:
-                sorted_items = sorted(items, key=lambda x: x.seeders if x.seeders is not None else 0, reverse=True)
-                logger.debug(f"ResultsPerQualityFilter: Sorting {len(items)} items for resolution {resolution} by seeds (default)")
-            
-            filtered_items.extend(sorted_items[:self.max_results_per_quality])
-            
-            if sorted_items and len(sorted_items) > 0:
-                sizes_gb = [int(item.size) / (1024*1024*1024) for item in sorted_items[:self.max_results_per_quality]]
-                logger.info(f"ResultsPerQualityFilter: For {resolution}, selected file sizes (GB): {', '.join([f'{size:.2f}' for size in sizes_gb])}")
-            
-            logger.debug(f"ResultsPerQualityFilter: Kept {min(len(sorted_items), self.max_results_per_quality)} items for resolution {resolution}")
+        logger.info(f"ResultsPerQualityFilter: Using sort method: {sort_method} (RTN will handle sorting)")
+        
+        if sort_method in ['sizedesc', 'sizeasc', 'qualitythensize']:
+            logger.info(f"ResultsPerQualityFilter: Size-based sorting detected, passing all items to RTN")
+            for resolution, items in resolution_groups.items():
+                filtered_items.extend(items)
+                logger.debug(f"ResultsPerQualityFilter: Passing all {len(items)} items for resolution {resolution} to RTN")
+        else:
+            for resolution, items in resolution_groups.items():
+
+
+                limited_items = items[:self.max_results_per_quality]
+                filtered_items.extend(limited_items)
+                
+                if limited_items and len(limited_items) > 0:
+                    sizes_gb = [int(item.size) / (1024*1024*1024) for item in limited_items]
+                    logger.info(f"ResultsPerQualityFilter: For {resolution}, selected file sizes (GB): {', '.join([f'{size:.2f}' for size in sizes_gb])}")
+                
+                logger.debug(f"ResultsPerQualityFilter: Kept {len(limited_items)} items for resolution {resolution}")
+        
+        
 
         logger.debug(f"ResultsPerQualityFilter: input {len(data)}, output {len(filtered_items)}")
         return filtered_items
