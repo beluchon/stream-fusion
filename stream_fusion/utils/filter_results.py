@@ -253,10 +253,27 @@ def merge_items(
     )
     merged_dict = {}
 
+    indexer_priority = {
+        "YggFlix": 1,
+        "DMM": 2,
+        "Sharewood": 3,
+        "Jackett": 4,
+    }
+    
+    def get_indexer_priority(indexer):
+        indexer_name = indexer.split(' ')[0] if indexer and ' ' in indexer else indexer
+        return indexer_priority.get(indexer_name, 999) 
+
     def add_to_merged(item: TorrentItem):
         key = (item.raw_title, item.size)
-        if key not in merged_dict or item.seeders > merged_dict[key].seeders:
+        if key not in merged_dict:
             merged_dict[key] = item
+        else:
+            existing_priority = get_indexer_priority(merged_dict[key].indexer)
+            new_priority = get_indexer_priority(item.indexer)
+            
+            if new_priority < existing_priority or (new_priority == existing_priority and item.seeders > merged_dict[key].seeders):
+                merged_dict[key] = item
 
     for item in cache_items:
         add_to_merged(item)
