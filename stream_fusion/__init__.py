@@ -1,5 +1,4 @@
 """stream_fusion package."""
-"""stream_fusion package."""
 
 import asyncio
 from fastapi import FastAPI
