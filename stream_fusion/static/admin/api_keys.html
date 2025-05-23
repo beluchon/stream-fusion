@@ -97,6 +97,7 @@
       <th data-sort="apiKey">API Key <span class="sort-icon"></span></th>
       <th data-sort="name">Name <span class="sort-icon"></span></th>
       <th data-sort="status">Status <span class="sort-icon"></span></th>
+      <th data-sort="proxified">Proxification <span class="sort-icon"></span></th>
       <th data-sort="expiration">Expiration Date <span class="sort-icon"></span></th>
       <th data-sort="lastUse">Last Use <span class="sort-icon"></span></th>
       <th data-sort="totalUse">Total Use <span class="sort-icon"></span></th>
@@ -112,6 +113,7 @@
       </td>
       <td>{{ log.name or 'N/A' }}</td>
       <td>{{ 'Active' if log.is_active else 'Inactive' }}</td>
+      <td>{{ 'Enabled' if log.proxied_links else 'Disabled' }}</td>
       <td>{{ 'Never' if log.never_expire else log.expiration_date }}</td>
       <td>{{ log.latest_query_date or 'N/A' }}</td>
       <td>{{ log.total_queries }}</td>
@@ -128,6 +130,10 @@
             <button type="submit" class="btn btn-secondary btn-sm">Renew</button>
           </form>
           {% endif %}
+          <form action="{{ url_for('toggle_proxied_links')(request) }}" method="post" class="d-inline">
+            <input type="hidden" name="api_key" value="{{ log.api_key }}">
+            <button type="submit" class="btn {% if log.proxied_links %}btn-warning{% else %}btn-secondary{% endif %} btn-sm">{% if log.proxied_links %}Disable{% else %}Enable{% endif %} Proxy</button>
+          </form>
           <form action="{{ url_for('delete_api_key')(request) }}" method="post" class="d-inline">
             <input type="hidden" name="api_key" value="{{ log.api_key }}">
             <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure you want to delete this API key?')">Delete</button>
@@ -201,9 +207,10 @@
         'apiKey': 1,
         'name': 2,
         'status': 3,
-        'expiration': 4,
-        'lastUse': 5,
-        'totalUse': 6
+        'proxified': 4,
+        'expiration': 5,
+        'lastUse': 6,
+        'totalUse': 7
       };
       return columnMap[column];
     }
