@@ -13,6 +13,7 @@ class UsageLog(BaseModel):
     expiration_date: datetime | str | None
     latest_query_date: Optional[datetime] | str | None
     total_queries: int
+    proxied_links: bool = False
 
 
 class UsageLogs(BaseModel):
