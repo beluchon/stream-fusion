@@ -7,7 +7,7 @@ import secrets
 import uuid
 from datetime import timedelta
 
-from stream_fusion.services.postgresql.schemas.apikey_schemas import APIKeyCreate
+from stream_fusion.services.postgresql.schemas.apikey_schemas import APIKeyCreate, APIKeyUpdate
 from stream_fusion.utils.security.security_secret import SecretManager
 from stream_fusion.services.postgresql.dao.apikey_dao import APIKeyDAO
 from stream_fusion.web.api.auth.schemas import UsageLogs, UsageLog
@@ -129,6 +129,7 @@ async def list_api_keys(
                 ),
                 total_queries=key.total_queries,
                 name=key.name if key.name else "JohnDoe",
+                proxied_links=key.proxied_links,
             )
             for key in usage_stats
         ]
@@ -156,13 +157,14 @@ async def create_api_key(
     authenticated: bool = Depends(session_based_security),
     name: str = Form(None),
     never_expires: bool = Form(False),
+    proxied_links: bool = Form(False),
     apikey_dao: APIKeyDAO = Depends(),
 ):
     if isinstance(authenticated, RedirectResponse):
         return authenticated
 
-    logger.info(f"Creating new API key. Name: {name}, Never expires: {never_expires}")
-    key = APIKeyCreate(name=name, never_expire=never_expires)
+    logger.info(f"Creating new API key. Name: {name}, Never expires: {never_expires}, Proxied links: {proxied_links}")
+    key = APIKeyCreate(name=name, never_expire=never_expires, proxied_links=proxied_links)
     new_key = await apikey_dao.create_key(key)
     logger.info(f"New API key created: {new_key.api_key}")
     return RedirectResponse(
@@ -246,6 +248,41 @@ async def delete_api_key(
         url=custom_url_for("list_api_keys")(request), status_code=HTTP_303_SEE_OTHER
     )
 
+
+@router.post("/toggle-proxied-links")
+async def toggle_proxied_links(
+    request: Request,
+    authenticated: bool = Depends(session_based_security),
+    api_key: str = Form(...),
+    apikey_dao: APIKeyDAO = Depends(),
+):
+    if isinstance(authenticated, RedirectResponse):
+        return authenticated
+
+    api_key_uuid = ensure_uuid(api_key)
+    logger.info(f"Toggling proxied links for API key: {api_key_uuid}")
+    
+    try:
+        # Récupérer la clé API
+        key_info = await apikey_dao.get_key_by_uuid(api_key_uuid)
+        if not key_info:
+            logger.warning(f"API key not found for toggling proxied links: {api_key_uuid}")
+            return RedirectResponse(
+                url=custom_url_for("list_api_keys")(request), status_code=HTTP_303_SEE_OTHER
+            )
+        
+        # Mettre à jour avec la valeur inverse
+        current_value = getattr(key_info, 'proxied_links', False)
+        update_data = APIKeyUpdate(proxied_links=not current_value)
+        
+        await apikey_dao.update_key(api_key_uuid, update_data)
+        logger.info(f"Proxied links toggled to {not current_value} for API key: {api_key_uuid}")
+    except Exception as e:
+        logger.error(f"Error toggling proxied links for API key {api_key_uuid}: {str(e)}")
+    
+    return RedirectResponse(
+        url=custom_url_for("list_api_keys")(request), status_code=HTTP_303_SEE_OTHER
+    )
 
 @router.get("/logout")
 async def logout(request: Request, redis_client=get_redis_dependency()):
