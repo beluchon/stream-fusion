@@ -20,6 +20,7 @@ class APIKeyModel(Base):
     latest_query_date: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     total_queries: Mapped[int] = mapped_column(default=0)
     name: Mapped[str] = mapped_column(nullable=False)
+    proxied_links: Mapped[bool] = mapped_column(Boolean, default=False)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
