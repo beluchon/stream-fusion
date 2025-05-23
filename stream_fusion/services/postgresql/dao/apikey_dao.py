@@ -124,7 +124,8 @@ class APIKeyDAO:
                     expiration_date=timestamp_to_datetime(key.expiration_date),
                     latest_query_date=timestamp_to_datetime(key.latest_query_date),
                     total_queries=key.total_queries,
-                    name=key.name
+                    name=key.name,
+                    proxied_links=key.proxied_links
                 )
                 for key in result.scalars().all()
             ]
@@ -168,7 +169,8 @@ class APIKeyDAO:
                 expiration_date=timestamp_to_datetime(db_key.expiration_date),
                 latest_query_date=timestamp_to_datetime(db_key.latest_query_date),
                 total_queries=db_key.total_queries,
-                name=db_key.name
+                name=db_key.name,
+                proxied_links=db_key.proxied_links
             )
         except HTTPException:
             raise
@@ -199,74 +201,36 @@ class APIKeyDAO:
     async def check_key(self, api_key: uuid.UUID) -> bool:
         async with self.session.begin():
             try:
-                query = select(APIKeyModel).where(APIKeyModel.api_key == str(api_key))
+                query = select(APIKeyModel).where(
+                    APIKeyModel.api_key == str(api_key),
+                    APIKeyModel.is_active == True,
+                    (APIKeyModel.never_expire == True) | 
+                    (APIKeyModel.expiration_date > datetime_to_timestamp(datetime.now(timezone.utc)))
+                )
                 result = await self.session.execute(query)
-                db_key = result.scalar_one_or_none()
-
-                if not db_key or not db_key.is_active:
-                    logger.warning(f"Invalid or inactive API key: {api_key}")
-                    return False
-
-                current_time = datetime_to_timestamp(datetime.now(timezone.utc))
-                if not db_key.never_expire and db_key.expiration_date < current_time:
-                    logger.warning(f"Expired API key: {api_key}")
-                    return False
-
-                db_key.total_queries += 1
-                db_key.latest_query_date = current_time
-
-                logger.debug(f"Valid API key used: {api_key}")
-                return True
+                key_exists = result.scalar_one_or_none() is not None
+                logger.debug(f"Checked API key {api_key}: {'valid' if key_exists else 'invalid'}")
+                return key_exists
             except Exception as e:
                 logger.error(f"Error checking API key {api_key}: {str(e)}")
                 return False
 
-    async def renew_key(self, api_key: uuid.UUID) -> APIKeyInDB:
-        try:
-            query = select(APIKeyModel).where(APIKeyModel.api_key == str(api_key))
-            result = await self.session.execute(query)
-            db_key = result.scalar_one_or_none()
-            if not db_key:
-                logger.warning(f"API key not found for renewal: {api_key}")
-                raise HTTPException(status_code=404, detail="API key not found")
-            
-            db_key.is_active = True
-            
-            current_time = datetime_to_timestamp(datetime.now(timezone.utc))
-            
-            if db_key.never_expire:
-                logger.info(f"Renewing a non-expiring key: {api_key}")
-            else:
-                if db_key.expiration_date and db_key.expiration_date > current_time:
-                    logger.info(f"Attempted to renew non-expired key: {api_key}")
-                else:
-                    # Update the expiration date only if it's not a non-expiring key
-                    db_key.expiration_date = datetime_to_timestamp(
-                        datetime.now(timezone.utc) + timedelta(days=self.expiration_limit)
-                    )
-                    logger.info(f"Renewed expiring key: {api_key}")
-            
-            await self.session.commit()
-            await self.session.refresh(db_key)
-            
-            logger.success(f"Renewed API key: {api_key}")
-            
-            return APIKeyInDB(
-                id=db_key.id,
-                api_key=db_key.api_key,
-                is_active=db_key.is_active,
-                never_expire=db_key.never_expire,
-                expiration_date=timestamp_to_datetime(db_key.expiration_date),
-                latest_query_date=timestamp_to_datetime(db_key.latest_query_date),
-                total_queries=db_key.total_queries,
-                name=db_key.name
-            )
-        except HTTPException:
-            raise
-        except Exception as e:
-            await self.session.rollback()
-            logger.error(f"Error renewing API key {api_key}: {str(e)}")
-            raise HTTPException(status_code=500, detail="Internal server error")
+    async def record_query(self, api_key: uuid.UUID) -> None:
+        async with self.session.begin():
+            try:
+                query = select(APIKeyModel).where(APIKeyModel.api_key == str(api_key))
+                result = await self.session.execute(query)
+                db_key = result.scalar_one_or_none()
+
+                if db_key:
+                    now = datetime.now(timezone.utc)
+                    db_key.latest_query_date = datetime_to_timestamp(now)
+                    db_key.total_queries += 1
+                    await self.session.commit()
+                    logger.debug(f"Recorded query for API key: {api_key}")
+            except Exception as e:
+                await self.session.rollback()
+                logger.error(f"Error recording query for API key {api_key}: {str(e)}")
 
     async def get_usage_stats(self) -> List[APIKeyInDB]:
         try:
@@ -281,7 +245,8 @@ class APIKeyDAO:
                     expiration_date=timestamp_to_datetime(key.expiration_date),
                     latest_query_date=timestamp_to_datetime(key.latest_query_date),
                     total_queries=key.total_queries,
-                    name=key.name
+                    name=key.name,
+                    proxied_links=key.proxied_links
                 )
                 for key in result.scalars().all()
             ]
@@ -289,78 +254,4 @@ class APIKeyDAO:
             return keys
         except Exception as e:
             logger.error(f"Error retrieving usage stats: {str(e)}")
-            raise HTTPException(status_code=500, detail="Internal server error")
-
-    async def list_active_keys(self) -> List[APIKeyInDB]:
-        try:
-            query = select(APIKeyModel).where(APIKeyModel.is_active == True)
-            result = await self.session.execute(query)
-            keys = [
-                APIKeyInDB(
-                    id=key.id,
-                    api_key=key.api_key,
-                    is_active=key.is_active,
-                    never_expire=key.never_expire,
-                    expiration_date=timestamp_to_datetime(key.expiration_date),
-                    latest_query_date=timestamp_to_datetime(key.latest_query_date),
-                    total_queries=key.total_queries,
-                    name=key.name
-                )
-                for key in result.scalars().all()
-            ]
-            logger.info(f"Retrieved {len(keys)} active API keys")
-            return keys
-        except Exception as e:
-            logger.error(f"Error listing active keys: {str(e)}")
-            raise HTTPException(status_code=500, detail="Internal server error")
-
-    async def update_key_name(self, api_key: uuid.UUID, new_name: str) -> APIKeyInDB:
-        try:
-            query = select(APIKeyModel).where(APIKeyModel.api_key == str(api_key))
-            result = await self.session.execute(query)
-            db_key = result.scalar_one_or_none()
-
-            if not db_key:
-                logger.warning(f"API key not found for name update: {api_key}")
-                raise HTTPException(status_code=404, detail="API key not found")
-
-            db_key.name = new_name
-            await self.session.commit()
-            await self.session.refresh(db_key)
-
-            logger.info(f"Updated name for API key: {api_key}")
-            return APIKeyInDB(
-                id=db_key.id,
-                api_key=db_key.api_key,
-                is_active=db_key.is_active,
-                never_expire=db_key.never_expire,
-                expiration_date=timestamp_to_datetime(db_key.expiration_date),
-                latest_query_date=timestamp_to_datetime(db_key.latest_query_date),
-                total_queries=db_key.total_queries,
-                name=db_key.name
-            )
-        except HTTPException:
-            raise
-        except Exception as e:
-            await self.session.rollback()
-            logger.error(f"Error updating name for API key {api_key}: {str(e)}")
-            raise HTTPException(status_code=500, detail="Internal server error")
-
-    async def revoke_key(self, api_key: uuid.UUID) -> bool:
-        try:
-            query = select(APIKeyModel).where(APIKeyModel.api_key == str(api_key))
-            result = await self.session.execute(query)
-            db_key = result.scalar_one_or_none()
-
-            if db_key:
-                db_key.is_active = False
-                await self.session.commit()
-                logger.success(f"Revoked API key: {api_key}")
-                return True
-            else:
-                logger.warning(f"API key not found for revocation: {api_key}")
-                return False
-        except Exception as e:
-            await self.session.rollback()
-            logger.error(f"Error revoking API key {api_key}: {str(e)}")
             raise HTTPException(status_code=500, detail="Internal server error")
