@@ -117,45 +117,35 @@ async def handle_download(
     api_key = config.get("apiKey")
     cache_key = f"download:{api_key}:{json.dumps(query)}_{ip}"
     
-    # Clé de cache spécifique pour les liens de streaming StremThru
-    # Durée de vie courte (30 secondes) pour éviter les appels répétés lors d'une même session de visionnage
+
     stremthru_link_key = f"stremthru_link:{api_key}:{json.dumps(query)}_{ip}"
 
-    # Check if a download is already in progress
     if await redis_cache.get(cache_key) == DOWNLOAD_IN_PROGRESS_FLAG:
         logger.info("Playback: Download already in progress")
         
-        # Vérifier si le magnet est déjà disponible sur StremThru
         if config.get("stremthru") and query.get("service") in ["ST", "RD", "AD", "PM", "TB", "OC", "DL", "ED", "PK"]:
             try:
-                # Vérifier d'abord si un lien de streaming a déjà été généré récemment
                 cached_link = await redis_cache.get(stremthru_link_key)
                 if cached_link:
                     logger.info(f"Playback: Utilisation d'un lien de streaming StremThru mis en cache")
                     return cached_link
                 
-                # Importer StremThru
                 from stream_fusion.utils.debrid.stremthru import StremThru
                 
-                # Utiliser la fonction get_download_service déjà importée au niveau global
                 stremthru_service = get_download_service(config)
                 
-                # Vérifier que le service est bien une instance de StremThru
                 if not isinstance(stremthru_service, StremThru):
                     logger.warning(f"Playback: Le service de téléchargement n'est pas StremThru, c'est {type(stremthru_service).__name__}")
                     return settings.no_cache_video_url
                 
-                # Essayer directement de générer un lien de streaming sans vérification préalable
                 magnet = query.get("magnet")
                 if magnet:
                     logger.info(f"Playback: Génération directe d'un lien de streaming via StremThru")
                     
-                    # Essayer de générer un lien de streaming sans vérification
                     stream_link = stremthru_service.get_stream_link(query, config, ip)
                     
                     if stream_link:
                         logger.success(f"Playback: Lien de streaming généré avec succès via StremThru")
-                        # Mettre en cache le lien pendant 30 secondes pour éviter les appels répétés
                         await redis_cache.set(stremthru_link_key, stream_link, expiration=30)
                         return stream_link
                     else:
@@ -165,7 +155,6 @@ async def handle_download(
         
         return settings.no_cache_video_url
 
-    # Mark the start of the download
     await redis_cache.set(
         cache_key, DOWNLOAD_IN_PROGRESS_FLAG, expiration=600  # 10 minute expiration
     )
@@ -346,7 +335,20 @@ async def get_playback(
             except LockError:
                 logger.warning("Playback: Failed to release lock (already released)")
 
-        if not settings.proxied_link:
+        # Vérifier si la proxification est activée pour cette clé API
+        use_proxy = settings.proxied_link  # Valeur par défaut
+        
+        if api_key:
+            try:
+                # Récupérer les informations de la clé API
+                api_key_info = await apikey_dao.get_key_by_uuid(api_key)
+                if api_key_info and hasattr(api_key_info, 'proxied_links'):
+                    use_proxy = api_key_info.proxied_links
+                    logger.info(f"Playback: API key {api_key} has proxied_links={use_proxy}")
+            except Exception as e:
+                logger.error(f"Playback: Error checking API key proxification status: {e}")
+        
+        if not use_proxy:
             logger.debug(f"Playback: Redirecting to non-proxied link: {link}")
             return RedirectResponse(
                 url=link, status_code=status.HTTP_301_MOVED_PERMANENTLY
