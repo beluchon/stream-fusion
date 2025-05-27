@@ -1,6 +1,6 @@
 const sorts = ['quality', 'sizedesc', 'sizeasc', 'qualitythensize'];
 const qualityExclusions = ['2160p', '1080p', '720p', '480p', 'rips', 'cam', 'hevc', 'unknown'];
-const languages = ['en', 'fr', 'multi'];
+const languages = ['en', 'fr', 'multi', 'vfq'];
 
 // Débrideurs implémentés nativement dans Stream Fusion
 const implementedDebrids = ['debrid_rd', 'debrid_ad', 'debrid_tb', 'debrid_pm', 'sharewood', 'yggflix'];
