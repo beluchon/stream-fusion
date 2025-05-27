@@ -19,17 +19,34 @@ class LanguagePriorityFilter(BaseFilter):
 
     def __init__(self, config):
         super().__init__(config)
-        # Définition des groupes de priorité pour les langues
-        self.language_priority_groups = {
-            # Groupe 1 (priorité la plus élevée)
-            1: ["VFF", "VOF", "VFI"],
-            # Groupe 2 (priorité moyenne)
-            2: ["VF2", "VFQ"],
-            # Groupe 3 (priorité basse)
-            3: ["VOSTFR"],
-            # Groupe 4 (priorité la plus basse - autres langues)
-            4: ["VQ", "FRENCH"]
-        }
+        
+        # Vérifier si VFQ est explicitement sélectionné dans les préférences de langue
+        vfq_selected = 'vfq' in config.get('languages', [])
+        
+        # Adapter les groupes de priorité en fonction des préférences de l'utilisateur
+        if vfq_selected:
+            # Si VFQ est sélectionné, placer VFQ et VF2 dans le groupe 1 (priorité la plus élevée)
+            # car VF2 est aussi du français québécois
+            self.language_priority_groups = {
+                # Groupe 1 (priorité la plus élevée)
+                1: ["VFQ", "VF2", "VQ"],  # VFQ et VF2 en priorité absolue
+                # Groupe 2 (priorité secondaire)
+                2: ["VFF", "VOF", "VFI", "FRENCH"],
+                # Groupe 3 (priorité basse)
+                3: ["VOSTFR"],
+
+            }
+            logger.info("VFQ sélectionné dans les préférences, VFQ et VF2 placés en priorité maximale")
+        else:
+            # Configuration standard si VFQ n'est pas explicitement sélectionné
+            self.language_priority_groups = {
+                # Groupe 1 (priorité la plus élevée)
+                1: ["VFF", "VOF", "VFI"],
+                # Groupe 2 (priorité moyenne)
+                2: ["VF2", "VFQ", "VQ", "FRENCH"],
+                # Groupe 3 (priorité basse)
+                3: ["VOSTFR"],
+            }
         
         # Créer un dictionnaire inversé pour un accès rapide à la priorité par langue
         self.language_priority_map = {}
@@ -42,18 +59,14 @@ class LanguagePriorityFilter(BaseFilter):
         Trie les torrents selon la priorité de langue définie.
         Utilise RTN pour l'analyse et le classement des torrents.
         """
-        # Ajouter l'information de priorité de langue à chaque torrent
         for torrent in data:
-            # Déterminer la priorité de langue
             language_priority = self._get_language_priority(torrent)
             
-            # Ajouter la priorité comme attribut au torrent pour le tri
             torrent.language_priority = language_priority
             
             logger.trace(f"Torrent {torrent.raw_title} a une priorité de langue: {language_priority}")
 
-        # Tri uniquement par priorité de langue (plus petit = plus prioritaire)
-        # Nous ne faisons pas de tri secondaire par qualité pour éviter les doublons avec d'autres filtres
+
         sorted_data = sorted(data, key=lambda x: x.language_priority)
         
         logger.info(f"Tri par langue terminé. Ordre des langues: VFF/VOF/VFI > VF2/VFQ > VOST > autres")
@@ -70,25 +83,20 @@ class LanguagePriorityFilter(BaseFilter):
         Returns:
             int: Valeur de priorité (plus petit = plus prioritaire)
         """
-        # Détecter la langue à partir du titre
         language = self._detect_language_from_title(torrent.raw_title)
         
         if not language:
-            # Si aucune langue n'est détectée dans le titre, vérifier les langues du torrent
             if hasattr(torrent, 'languages') and torrent.languages:
-                # Parcourir les langues du torrent et trouver celle avec la priorité la plus élevée
                 best_priority = 999
                 for lang in torrent.languages:
-                    # Convertir les codes de langue courts en codes correspondant à nos groupes
                     lang_code = self._convert_language_code(lang)
                     if lang_code in self.language_priority_map:
                         priority = self.language_priority_map[lang_code]
                         best_priority = min(best_priority, priority)
                 return best_priority
-            return 999  # Priorité la plus basse pour les langues non détectées
+            return 999  
         
-        # Utiliser le dictionnaire de mappage pour un accès direct à la priorité
-        return self.language_priority_map.get(language, 998)  # 998 pour les langues connues mais non classées
+        return self.language_priority_map.get(language, 998)  
     
     def _detect_language_from_title(self, title: str) -> str:
         """
@@ -119,13 +127,12 @@ class LanguagePriorityFilter(BaseFilter):
         Returns:
             str: Code de langue correspondant à nos groupes ou None
         """
-        # Mapping des codes de langue courts vers nos codes de priorité
         lang_mapping = {
             'fr': 'FRENCH',
             'vff': 'VFF',
             'vf': 'FRENCH',
             'vostfr': 'VOSTFR',
-            'multi': 'VFF',  # Considérer multi comme VFF (haute priorité)
+            'multi': 'VFF', 
             'voi': 'VOF',
             'vfi': 'VFI',
             'vf2': 'VF2',
@@ -140,4 +147,3 @@ class LanguagePriorityFilter(BaseFilter):
         """
         return True
         
-    # Nous avons supprimé la méthode _get_quality_score pour éviter les doublons avec d'autres filtres de qualité
