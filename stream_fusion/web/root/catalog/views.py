@@ -80,7 +80,7 @@ def extract_year(date_string):
 async def create_meta_object(details, item_type: str, imdb_id: str):
     meta = Meta(
         id=imdb_id,
-        title=details.title if hasattr(details, "title") else details.name,
+        title=getattr(details, "title", None) or getattr(details, "name", None),
         type=item_type,
         poster=(
             f"https://image.tmdb.org/t/p/w500{details.poster_path}"
