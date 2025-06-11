@@ -208,10 +208,22 @@ class APIKeyDAO:
                     (APIKeyModel.expiration_date > datetime_to_timestamp(datetime.now(timezone.utc)))
                 )
                 result = await self.session.execute(query)
-                key_exists = result.scalar_one_or_none() is not None
-                logger.debug(f"Checked API key {api_key}: {'valid' if key_exists else 'invalid'}")
-                return key_exists
+                db_key = result.scalar_one_or_none()
+                
+                if db_key:
+                    # Enregistrer automatiquement l'utilisation (comme dans l'ancienne version)
+                    now = datetime.now(timezone.utc)
+                    db_key.latest_query_date = datetime_to_timestamp(now)
+                    db_key.total_queries += 1
+                    await self.session.commit()
+                    logger.debug(f"Checked and recorded usage for API key {api_key}")
+                    return True
+                else:
+                    logger.debug(f"Checked API key {api_key}: invalid")
+                    return False
+                    
             except Exception as e:
+                await self.session.rollback()
                 logger.error(f"Error checking API key {api_key}: {str(e)}")
                 return False
 
@@ -254,4 +266,61 @@ class APIKeyDAO:
             return keys
         except Exception as e:
             logger.error(f"Error retrieving usage stats: {str(e)}")
+            raise HTTPException(status_code=500, detail="Internal server error")
+
+    async def revoke_key(self, api_key: uuid.UUID) -> bool:
+        """Revoke (deactivate) an API key"""
+        try:
+            update_data = APIKeyUpdate(is_active=False)
+            await self.update_key(api_key, update_data)
+            logger.info(f"API key revoked (deactivated): {api_key}")
+            return True
+        except HTTPException as e:
+            if e.status_code == 404:
+                logger.warning(f"API key not found for revocation: {api_key}")
+                return False
+            raise
+        except Exception as e:
+            logger.error(f"Error revoking API key {api_key}: {str(e)}")
+            raise HTTPException(status_code=500, detail="Internal server error")
+
+    async def renew_key(self, api_key: uuid.UUID) -> APIKeyInDB:
+        """Renew (reactivate) an API key"""
+        try:
+            update_data = APIKeyUpdate(is_active=True)
+            updated_key = await self.update_key(api_key, update_data)
+            logger.info(f"API key renewed (reactivated): {api_key}")
+            return updated_key
+        except Exception as e:
+            logger.error(f"Error renewing API key {api_key}: {str(e)}")
+            raise
+
+    async def list_active_keys(self) -> List[APIKeyInDB]:
+        """List all active API keys"""
+        try:
+            current_time = datetime.now(timezone.utc)
+            query = select(APIKeyModel).where(
+                APIKeyModel.is_active == True,
+                (APIKeyModel.never_expire == True) | 
+                (APIKeyModel.expiration_date > datetime_to_timestamp(current_time))
+            )
+            result = await self.session.execute(query)
+            keys = [
+                APIKeyInDB(
+                    id=key.id,
+                    api_key=key.api_key,
+                    is_active=key.is_active,
+                    never_expire=key.never_expire,
+                    expiration_date=timestamp_to_datetime(key.expiration_date),
+                    latest_query_date=timestamp_to_datetime(key.latest_query_date),
+                    total_queries=key.total_queries,
+                    name=key.name,
+                    proxied_links=key.proxied_links
+                )
+                for key in result.scalars().all()
+            ]
+            logger.info(f"Retrieved {len(keys)} active API keys")
+            return keys
+        except Exception as e:
+            logger.error(f"Error retrieving active keys: {str(e)}")
             raise HTTPException(status_code=500, detail="Internal server error")
