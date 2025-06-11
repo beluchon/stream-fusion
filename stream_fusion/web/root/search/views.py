@@ -236,7 +236,7 @@ async def get_results(
                 try:
                     cache_key = media_cache_key(media)
                     search_results_dict = [item.to_dict() for item in search_results]
-                    await redis_cache.set(cache_key, search_results_dict)
+                    await redis_cache.set(cache_key, search_results_dict, expiration=settings.redis_expiration)
                     logger.success("Search: Cache update successful")
                 except Exception as e:
                     logger.error(f"Search: Error updating cache: {e}")
@@ -253,7 +253,7 @@ async def get_results(
             logger.debug("Search: No results in cache. Performing new search.")
             nocache_results = await get_search_results(media, config)
             nocache_results_dict = [item.to_dict() for item in nocache_results]
-            await redis_cache.set(cache_key, nocache_results_dict)
+            await redis_cache.set(cache_key, nocache_results_dict, expiration=settings.redis_expiration)
             logger.info(
                 f"Search: New search completed, found {len(nocache_results)} results"
             )
@@ -275,7 +275,7 @@ async def get_results(
             await redis_cache.delete(cache_key)
             unfiltered_results = await get_search_results(media, config)
             unfiltered_results_dict = [item.to_dict() for item in unfiltered_results]
-            await redis_cache.set(cache_key, unfiltered_results_dict)
+            await redis_cache.set(cache_key, unfiltered_results_dict, expiration=settings.redis_expiration)
             filtered_results = filter_items(unfiltered_results, media, config=config)
 
         logger.success(
