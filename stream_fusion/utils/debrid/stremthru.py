@@ -6,6 +6,7 @@ import json
 from stream_fusion.logging_config import logger
 from stream_fusion.utils.debrid.base_debrid import BaseDebrid
 from stream_fusion.settings import settings
+from stream_fusion.utils.general import season_episode_in_filename
 
 
 class StremThru(BaseDebrid):
@@ -232,11 +233,10 @@ class StremThru(BaseDebrid):
                     return magnet_info
         except Exception as e:
             logger.warning(f"Erreur lors de la récupération du magnet {magnet_id}: {e}")
-            
-            # En cas d'erreur, si nous avons un dictionnaire avec des fichiers, utilisons-le directement
+                                                        
             if isinstance(magnet_info, dict) and "files" in magnet_info:
                 logger.debug("Utilisation des informations de fichiers déjà disponibles dans le magnet après erreur")
-                return magnet_info
+                return magnet_info                                                                          
         
         return None
     
@@ -315,17 +315,34 @@ class StremThru(BaseDebrid):
                 
             target_file = None
             
-            if file_idx != -1:
-                logger.debug(f"StremThru: Recherche du fichier avec index {file_idx}")
-                for file in magnet_data["files"]:
-                    if str(file.get("index")) == str(file_idx):
-                        target_file = file
-                        logger.debug(f"StremThru: Fichier trouvé avec index {file_idx}: {file.get('name')}")
-                        break
+            # Pour les séries, chercher d'abord par nom
+            if stream_type == "series" and season and episode:
+                try:
+                    numeric_season = int(season.replace("S", ""))
+                    numeric_episode = int(episode.replace("E", ""))
+                    
+                    for file in magnet_data["files"]:
+                        file_name = file.get("name", "").lower()
+                        
+                        if not any(ext in file_name for ext in [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm"]):
+                            continue
+                            
+                        if season_episode_in_filename(file_name, numeric_season, numeric_episode):
+                            target_file = file
+                            logger.info(f"StremThru: Fichier trouvé par NOM: {file_name} (index: {file.get('index')})")
+                            break
+                except Exception as e:
+                    logger.warning(f"StremThru: Erreur lors de la recherche par nom: {str(e)}")
             
-
+            # Si pas trouvé par nom et qu'un index est spécifié, essayer par index
+            if not target_file and file_idx is not None:
+                target_file = next((f for f in magnet_data["files"] if f.get("index") == file_idx), None)
+                if target_file:
+                    logger.info(f"StremThru: Fichier trouvé par INDEX {file_idx}: {target_file.get('name')}")
+            
+            # Si toujours pas trouvé, prendre le plus gros fichier vidéo
             if not target_file:
-                logger.debug(f"StremThru: Fichier avec index {file_idx} non trouvé, recherche du plus gros fichier")
+                logger.debug(f"StremThru: Aucun fichier trouvé par nom ou index, recherche du plus gros fichier")
                 video_files = []
                 
                 for file in magnet_data["files"]:
@@ -336,71 +353,15 @@ class StremThru(BaseDebrid):
                         continue
                     
                     if any(ext in file_name for ext in [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm"]):
-                        if stream_type == "series" and season and episode:
-                            from stream_fusion.utils.general import season_episode_in_filename
-                            
-                            try:
-                                numeric_season = int(season.replace("S", ""))
-                                numeric_episode = int(episode.replace("E", ""))
-                                
-                                if season_episode_in_filename(file_name, numeric_season, numeric_episode):
-                                    logger.debug(f"StremThru: Épisode correspondant trouvé: {file_name}")
-                                    video_files.append(file)
-                                    continue
-                                
-                                season_str = f"s{str(numeric_season).zfill(2)}"
-                                episode_str = f"e{str(numeric_episode).zfill(2)}"
-                                if season_str in file_name and episode_str in file_name:
-                                    logger.debug(f"StremThru: Épisode correspondant via pattern s/e: {file_name}")
-                                    video_files.append(file)
-                                    continue
-                                
-                                if numeric_season < 10:  # Seulement pour les saisons 1-9
-                                    combined_pattern = f"{numeric_season}{str(numeric_episode).zfill(2)}"
-                                    if combined_pattern in file_name:
-                                        logger.debug(f"StremThru: Épisode correspondant via pattern numérique: {file_name}")
-                                        video_files.append(file)
-                                        continue
-                                
-                                if season_str in file_name:
-                                    simple_ep_patterns = [
-                                        f"episode.{numeric_episode}",
-                                        f"episode {numeric_episode}",
-                                        f"e{numeric_episode}.",
-                                        f"e{numeric_episode} ",
-                                        f"e{str(numeric_episode).zfill(2)}",
-                                        f"_{numeric_episode}.",
-                                        f".{numeric_episode}.",
-                                    ]
-                                    if any(pattern in file_name for pattern in simple_ep_patterns):
-                                        logger.debug(f"StremThru: Épisode correspondant via pattern simple: {file_name}")
-                                        video_files.append(file)
-                                        continue
-                            except Exception as e:
-                                logger.warning(f"StremThru: Erreur lors de la détection d'épisode: {str(e)}")
-                        
-
                         video_files.append(file)
                 
                 if video_files:
-
                     target_file = sorted(video_files, key=lambda x: x.get("size", 0), reverse=True)[0]
-                    
-
-                    if stream_type == "series" and season and episode:
-                        for file in video_files:
-                            file_name = file.get("name", "").lower()
-                            if f"s{season.replace('S', '')}" in file_name and f"e{episode.replace('E', '')}" in file_name:
-                                target_file = file
-                                logger.debug(f"StremThru: Sélection du fichier correspondant à S{season}E{episode}: {file_name}")
-                                break
-                    
-                    logger.debug(f"StremThru: Sélection du fichier vidéo: {target_file.get('name')}")
+                    logger.info(f"StremThru: Sélection du plus gros fichier vidéo: {target_file.get('name')} (index: {target_file.get('index')})")
                 else:
-                    # Si aucun fichier vidéo, prendre le premier fichier
                     target_file = magnet_data["files"][0] if magnet_data["files"] else None
                     if target_file:
-                        logger.warning(f"StremThru: Aucun fichier vidéo trouvé, utilisation du premier fichier: {target_file.get('name')}")
+                        logger.warning(f"StremThru: Aucun fichier vidéo trouvé, utilisation du premier fichier: {target_file.get('name')} (index: {target_file.get('index')})")
                     else:
                         logger.error("StremThru: Aucun fichier trouvé dans le torrent")
                         return None
@@ -413,33 +374,28 @@ class StremThru(BaseDebrid):
             file_id = target_file.get("index", "")
             
             if stream_type == "series" and season and episode:
-                logger.info(f"StremThru: Sélection de S{season}E{episode} dans le torrent {torrent_id}, fichier index {file_id}")
+                logger.info(f"StremThru: Sélection finale de S{season}E{episode} dans le torrent {torrent_id}, fichier: {target_file.get('name')} (index: {file_id})")
             else:
-                logger.info(f"StremThru: Sélection du fichier {file_id} dans le torrent {torrent_id}")
+                logger.info(f"StremThru: Sélection finale du fichier {target_file.get('name')} (index: {file_id}) dans le torrent {torrent_id}")
             
-            # Générer le lien de streaming
             client_ip_param = f"?client_ip={ip}" if ip else ""
             url = f"{self.base_url}/link/generate{client_ip_param}"
             
             logger.debug(f"StremThru: Génération du lien pour {target_file.get('name')}")
             
-            # Logique standard comme les autres debrideurs
             json_data = {"link": target_file["link"]}
             
             try:
-                # Utiliser directement la session avec json=data au lieu de data=data
                 response = self.session.post(url, json=json_data)
                 
                 if response.status_code in [200, 201]:
                     try:
-                        # Essayer d'abord de décoder en JSON
                         json_data = response.json()
                         if json_data and "data" in json_data and "link" in json_data["data"]:
                             stream_link = json_data["data"]["link"]
                             logger.info(f"StremThru: Lien de streaming généré avec succès: {stream_link}")
                             return stream_link
                     except json.JSONDecodeError:
-                        # Si ce n'est pas du JSON, c'est peut-être directement le lien
                         stream_link = response.text.strip()
                         if stream_link.startswith(('http://', 'https://')):
                             logger.info(f"StremThru: Lien de streaming reçu directement: {stream_link}")
@@ -460,26 +416,11 @@ class StremThru(BaseDebrid):
         
         return None
     
-    def get_magnet_info(self, magnet_id, ip=None):
-        """Récupère les informations d'un magnet"""
-        try:
-            client_ip_param = f"?client_ip={ip}" if ip else ""
-            url = f"{self.base_url}/magnets/{magnet_id}{client_ip_param}"
-            
-            response = self.json_response(url)
-            if response and "data" in response:
-                return response["data"]
-        except Exception as e:
-            logger.warning(f"Erreur lors de la récupération des informations du magnet sur StremThru-{self.store_name}: {e}")
-        
-        return None
-        
     def start_background_caching(self, magnet, query=None):
         """Démarre le téléchargement d'un magnet en arrière-plan."""
         logger.info(f"Démarrage du téléchargement en arrière-plan pour un magnet via StremThru-{self.store_name}")
         
         try:
-            # Ajouter le magnet sans attendre la fin du téléchargement
             result = self.add_magnet(magnet)
             
             if not result:
