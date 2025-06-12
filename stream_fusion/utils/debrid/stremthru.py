@@ -334,13 +334,18 @@ class StremThru(BaseDebrid):
                 except Exception as e:
                     logger.warning(f"StremThru: Erreur lors de la recherche par nom: {str(e)}")
             
-            # Si pas trouvé par nom et qu'un index est spécifié, essayer par index
+
             if not target_file and file_idx is not None:
                 target_file = next((f for f in magnet_data["files"] if f.get("index") == file_idx), None)
                 if target_file:
                     logger.info(f"StremThru: Fichier trouvé par INDEX {file_idx}: {target_file.get('name')}")
+                    
+                    if stream_type == "movie":
+                        file_name = target_file.get("name", "").lower()
+                        if any(ext in file_name for ext in [".nfo", ".txt", ".jpg", ".png", ".srt", ".sub"]):
+                            logger.warning(f"StremThru: Le fichier à l'index {file_idx} n'est pas une vidéo: {target_file.get('name')}")
+                            target_file = None
             
-            # Si toujours pas trouvé, prendre le plus gros fichier vidéo
             if not target_file:
                 logger.debug(f"StremThru: Aucun fichier trouvé par nom ou index, recherche du plus gros fichier")
                 video_files = []
