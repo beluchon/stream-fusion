@@ -81,10 +81,11 @@ class AllDebrid(BaseDebrid):
                     matching_files.append(file)
 
             if len(matching_files) == 0:
-                logger.error(f"AllDebrid: No matching files for S{numeric_season:02d}E{numeric_episode:02d} in torrent.")
-                raise HTTPException(status_code=404, detail=f"No matching files for S{numeric_season:02d}E{numeric_episode:02d} in torrent.")
-
-            link = max(matching_files, key=lambda x: x["size"])["link"]
+                logger.warning(f"AllDebrid: No matching files found for S{numeric_season:02d}E{numeric_episode:02d}")
+                return None
+            else:
+                # Correspondance trouvée via filename parsing
+                link = max(matching_files, key=lambda x: x["size"])["link"]
         else:
             logger.error("AllDebrid: Unsupported stream type.")
             raise HTTPException(status_code=500, detail="Unsupported stream type.")

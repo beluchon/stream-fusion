@@ -229,9 +229,17 @@ class Torbox(BaseDebrid):
                 logger.info(f"Torbox: Selected file index {file_index} for series")
                 return file_index
             
+
+            try:
+                numeric_season = int(season.replace("S", ""))
+                numeric_episode = int(episode.replace("E", ""))
+            except (ValueError, TypeError):
+                logger.error(f"Torbox: Invalid season/episode format: {season}/{episode}")
+                return None
+            
             matching_files = [
                 file for file in files
-                if season_episode_in_filename(file["short_name"], season, episode) and is_video_file(file["short_name"])
+                if season_episode_in_filename(file["short_name"], numeric_season, numeric_episode) and is_video_file(file["short_name"])
             ]
             
             if matching_files:
@@ -239,7 +247,22 @@ class Torbox(BaseDebrid):
                 logger.info(f"Torbox: Selected largest matching file (ID: {largest_matching_file['id']}, Name: {largest_matching_file['name']}, Size: {largest_matching_file['size']}) for series")
                 return largest_matching_file["id"]
             else:
-                logger.warning(f"Torbox: No matching files found for S{season}E{episode}")
-        
-        logger.error(f"Torbox: Failed to select appropriate file for {stream_type}")
-        return None
+                logger.warning(f"Torbox: No matching files found for S{numeric_season:02d}E{numeric_episode:02d}, trying smart fallback")
+                from stream_fusion.utils.general import smart_episode_fallback
+                
+                fallback_files = [
+                    {
+                        "name": file["short_name"],
+                        "size": file["size"],
+                        "index": file["id"]  
+                    }
+                    for file in files if is_video_file(file["short_name"])
+                ]
+                
+                fallback_file = smart_episode_fallback(fallback_files, numeric_season, numeric_episode)
+                if fallback_file:
+                    logger.info(f"Torbox: Smart fallback selected file: {fallback_file.get('name')} (ID: {fallback_file.get('index')})")
+                    return fallback_file.get('index')
+                else:
+                    logger.error(f"Torbox: Smart fallback also failed for S{numeric_season:02d}E{numeric_episode:02d}")
+                    return None

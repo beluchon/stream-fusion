@@ -349,97 +349,22 @@ class StremThru(BaseDebrid):
                 logger.error(f"StremThru: Aucun fichier dans le magnet {magnet_data.get('id', 'inconnu')}")
                 return None
                 
-            # Trouver le fichier correspondant à l'index demandé
+            # Logique identique aux autres debrideurs : utiliser SEULEMENT le file_index pré-calculé
             target_file = None
             
-            # Si l'index est spécifié, chercher le fichier correspondant
+            # Chercher le fichier correspondant à l'index pré-calculé par TorrentSmartContainer
             if file_idx != -1:
+                logger.debug(f"StremThru: Recherche du fichier avec index {file_idx}")
                 for file in magnet_data["files"]:
                     if str(file.get("index")) == str(file_idx):
                         target_file = file
+                        logger.debug(f"StremThru: Fichier trouvé avec index {file_idx}: {file.get('name')}")
                         break
-            
-            # Si aucun fichier n'est trouvé ou si l'index n'est pas spécifié,
-            # prendre le plus gros fichier vidéo
-            if not target_file:
-                logger.debug(f"StremThru: Fichier avec index {file_idx} non trouvé, recherche du plus gros fichier")
-                video_files = []
                 
-                for file in magnet_data["files"]:
-                    file_name = file.get("name", "").lower()
-                    
-                    # Vérifier si c'est un fichier vidéo
-                    is_video = any(ext in file_name for ext in [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm"])
-                    
-                    if is_video:
-                        # Pour les séries, essayer de trouver l'épisode correspondant
-                        if stream_type == "series" and season and episode:
-                            from stream_fusion.utils.general import season_episode_in_filename
-                            
-                            try:
-                                numeric_season = int(season.replace("S", ""))
-                                numeric_episode = int(episode.replace("E", ""))
-                                
-                                # Méthode 1: Utiliser season_episode_in_filename
-                                if season_episode_in_filename(file_name, numeric_season, numeric_episode):
-                                    logger.debug(f"StremThru: Épisode correspondant trouvé: {file_name}")
-                                    video_files.append(file)
-                                    continue
-                                
-                                # Méthode 2: Recherche de patterns comme s01e03
-                                season_str = f"s{str(numeric_season).zfill(2)}"
-                                episode_str = f"e{str(numeric_episode).zfill(2)}"
-                                if season_str in file_name and episode_str in file_name:
-                                    logger.debug(f"StremThru: Épisode correspondant via pattern s/e: {file_name}")
-                                    video_files.append(file)
-                                    continue
-                                
-                                # Méthode 3: Format numérique combiné (ex: 103 pour S01E03)
-                                if numeric_season < 10:  # Seulement pour les saisons 1-9
-                                    combined_pattern = f"{numeric_season}{str(numeric_episode).zfill(2)}"
-                                    if combined_pattern in file_name:
-                                        logger.debug(f"StremThru: Épisode correspondant via pattern numérique: {file_name}")
-                                        video_files.append(file)
-                                        continue
-                                
-                                # Méthode 4: Recherche par numéro d'épisode dans un fichier de la saison
-                                if season_str in file_name:
-                                    simple_ep_patterns = [
-                                        f"episode.{numeric_episode}",
-                                        f"episode {numeric_episode}",
-                                        f"e{numeric_episode}.",
-                                        f"e{numeric_episode} ",
-                                        f"e{str(numeric_episode).zfill(2)}",
-                                        f"_{numeric_episode}.",
-                                        f".{numeric_episode}.",
-                                    ]
-                                    if any(pattern in file_name for pattern in simple_ep_patterns):
-                                        logger.debug(f"StremThru: Épisode correspondant via pattern simple: {file_name}")
-                                        video_files.append(file)
-                                        continue
-                            except Exception as e:
-                                logger.warning(f"StremThru: Erreur lors de la détection d'épisode: {str(e)}")
-                        
-                        # Si nous n'avons pas trouvé d'épisode spécifique ou c'est un film, ajouter tous les fichiers vidéo
-                        video_files.append(file)
-                
-                if video_files:
-                    # Trier par taille décroissante
-                    target_file = sorted(video_files, key=lambda x: x.get("size", 0), reverse=True)[0]
-                    
-                    # Pour les séries, préférer les fichiers qui ont une correspondance avec la saison/épisode si disponible
-                    if stream_type == "series" and season and episode:
-                        for file in video_files:
-                            file_name = file.get("name", "").lower()
-                            if f"s{season.replace('S', '')}" in file_name and f"e{episode.replace('E', '')}" in file_name:
-                                target_file = file
-                                logger.debug(f"StremThru: Sélection du fichier correspondant à S{season}E{episode}: {file_name}")
-                                break
-                    
-                    logger.debug(f"StremThru: Sélection du fichier vidéo: {target_file.get('name')}")
-                else:
-                    # Si aucun fichier vidéo, prendre le premier fichier
-                    target_file = magnet_data["files"][0] if magnet_data["files"] else None
+                if not target_file:
+                    logger.error(f"StremThru: Fichier avec index {file_idx} non trouvé - échec de la sélection")
+            else:
+                logger.error(f"StremThru: Aucun file_index fourni - TorrentSmartContainer n'a pas pu sélectionner de fichier")
             
             if not target_file or "link" not in target_file:
                 logger.error(f"StremThru: Fichier cible non trouvé ou sans lien")
@@ -459,20 +384,10 @@ class StremThru(BaseDebrid):
             client_ip_param = f"?client_ip={ip}" if ip else ""
             url = f"{self.base_url}/link/generate{client_ip_param}"
             
-            # Créer un identifiant unique pour ce fichier spécifique
-            # Cela évite les problèmes de cache qui pourraient sélectionner le mauvais fichier
-            unique_id = ""
-            if stream_type == "series" and season and episode:
-                # Pour les séries, inclure saison et épisode dans l'ID unique
-                unique_id = f"_s{season.replace('S', '')}_e{episode.replace('E', '')}"
+            logger.debug(f"StremThru: Génération du lien pour {target_file.get('name')}")
             
-            logger.debug(f"StremThru: Génération du lien pour {target_file.get('name')}{unique_id}")
-            
-            # Ajouter l'identifiant unique à la requête pour garantir que nous obtenons
-            # un lien unique pour chaque épisode d'une série
+            # Logique standard comme les autres debrideurs
             json_data = {"link": target_file["link"]}
-            if unique_id:
-                json_data["uniqueId"] = unique_id
             
             # Utiliser directement la session avec json=data au lieu de data=data
             response = self.session.post(url, json=json_data)
