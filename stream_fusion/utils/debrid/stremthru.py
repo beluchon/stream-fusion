@@ -1,6 +1,7 @@
 import requests
 import time
 from urllib.parse import quote
+import json
 
 from stream_fusion.logging_config import logger
 from stream_fusion.utils.debrid.base_debrid import BaseDebrid
@@ -416,29 +417,44 @@ class StremThru(BaseDebrid):
             else:
                 logger.info(f"StremThru: Sélection du fichier {file_id} dans le torrent {torrent_id}")
             
+            # Générer le lien de streaming
             client_ip_param = f"?client_ip={ip}" if ip else ""
             url = f"{self.base_url}/link/generate{client_ip_param}"
             
             logger.debug(f"StremThru: Génération du lien pour {target_file.get('name')}")
             
+            # Logique standard comme les autres debrideurs
             json_data = {"link": target_file["link"]}
             
-            response = self.session.post(url, json=json_data)
+            try:
+                # Utiliser directement la session avec json=data au lieu de data=data
+                response = self.session.post(url, json=json_data)
+                
+                if response.status_code in [200, 201]:
+                    try:
+                        # Essayer d'abord de décoder en JSON
+                        json_data = response.json()
+                        if json_data and "data" in json_data and "link" in json_data["data"]:
+                            stream_link = json_data["data"]["link"]
+                            logger.info(f"StremThru: Lien de streaming généré avec succès: {stream_link}")
+                            return stream_link
+                    except json.JSONDecodeError:
+                        # Si ce n'est pas du JSON, c'est peut-être directement le lien
+                        stream_link = response.text.strip()
+                        if stream_link.startswith(('http://', 'https://')):
+                            logger.info(f"StremThru: Lien de streaming reçu directement: {stream_link}")
+                            return stream_link
+                        else:
+                            logger.error(f"StremThru: Réponse non-JSON invalide: {stream_link[:100]}...")
+                    except Exception as e:
+                        logger.error(f"StremThru: Erreur lors du traitement de la réponse: {str(e)}")
+                else:
+                    logger.error(f"StremThru: Échec de la génération du lien de streaming: {response.status_code} - {response.text[:100]}...")
+            except Exception as e:
+                logger.error(f"StremThru: Erreur lors de la génération du lien: {str(e)}")
             
-            if response.status_code in [200, 201]:
-                try:
-                    json_data = response.json()
-                    if json_data and "data" in json_data and "link" in json_data["data"]:
-                        stream_link = json_data["data"]["link"]
-                        logger.info(f"StremThru: Lien de streaming généré avec succès: {stream_link}")
-                        return stream_link
-                    else:
-                        logger.error(f"StremThru: Réponse invalide: {json_data}")
-                except Exception as json_e:
-                    logger.warning(f"Erreur lors du parsing JSON: {json_e}")
-            else:
-                logger.error(f"StremThru: Échec de la génération du lien de streaming: {response.status_code} - {response.text}")
-            
+            return None
+        
         except Exception as e:
             logger.warning(f"Erreur lors de la génération du lien sur StremThru-{self.store_name}: {e}")
         
