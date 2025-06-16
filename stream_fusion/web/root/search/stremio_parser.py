@@ -71,8 +71,13 @@ def _generate_binge_group(torrent_item: TorrentItem, media: Media) -> str:
     
     if media.type == "series":
         series_id = media.id.split(":")[0] if ":" in media.id else media.id
-        # Correction : prendre le premier élément de la liste, pas le premier caractère
-        quality = (torrent_item.parsed_data.quality and torrent_item.parsed_data.quality[0]) or "Unknown"
+        if torrent_item.parsed_data.quality:
+            if isinstance(torrent_item.parsed_data.quality, list):
+                quality = torrent_item.parsed_data.quality[0] if torrent_item.parsed_data.quality else "Unknown"
+            else:
+                quality = torrent_item.parsed_data.quality 
+        else:
+            quality = "Unknown"
         debrid = torrent_item.availability or "DL"
         binge_group = f"stremio-jackett-{series_id}-{quality}-{debrid}"
         
