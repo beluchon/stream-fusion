@@ -63,6 +63,24 @@ def detect_french_language(title):
     return None
 
 
+def generate_binge_group(torrent_item: TorrentItem, media: Media) -> str:
+    """Génère un bingeGroup intelligent selon le type de média"""
+    
+    if media.type == "movie":
+        return f"stremio-jackett-{torrent_item.info_hash}"
+    
+    if media.type == "series":
+        series_id = media.id.split(":")[0] if ":" in media.id else media.id
+        quality = torrent_item.parsed_data.quality[0] if torrent_item.parsed_data.quality else "Unknown"
+        debrid = torrent_item.availability or "DL"
+        return f"stremio-jackett-{series_id}-{quality}-{debrid}"
+    
+    return f"stremio-jackett-{torrent_item.info_hash}"
+
+
+
+
+
 def parse_to_debrid_stream(
     torrent_item: TorrentItem,
     configb64,
@@ -126,7 +144,7 @@ def parse_to_debrid_stream(
             "description": title,
             "url": f"{host}/playback/{configb64}/{queryb64}",
             "behaviorHints": {
-                "bingeGroup": f"stremio-jackett-{torrent_item.info_hash}",
+                "bingeGroup": generate_binge_group(torrent_item, media),
                 "filename": (
                     torrent_item.file_name
                     if torrent_item.file_name is not None
@@ -153,7 +171,7 @@ def parse_to_debrid_stream(
                     int(torrent_item.file_index) if torrent_item.file_index else None
                 ),
                 "behaviorHints": {
-                    "bingeGroup": f"stremio-jackett-{torrent_item.info_hash}",
+                    "bingeGroup": generate_binge_group(torrent_item, media),
                     "filename": (
                         torrent_item.file_name
                         if torrent_item.file_name is not None
