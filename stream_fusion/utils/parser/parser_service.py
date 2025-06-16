@@ -62,9 +62,11 @@ class StreamParser:
         
         if media.type == "series":
             series_id = media.id.split(":")[0] if ":" in media.id else media.id
-            quality = torrent_item.parsed_data.quality[0] if torrent_item.parsed_data.quality else "Unknown"
+            quality = (torrent_item.parsed_data.quality and torrent_item.parsed_data.quality[0]) or "Unknown"
             debrid = torrent_item.availability or "DL"
-            return f"stream-fusion-{series_id}-{quality}-{debrid}"
+            binge_group = f"stream-fusion-{series_id}-{quality}-{debrid}"
+            
+            return binge_group
         
         # Fallback
         return f"stream-fusion-{torrent_item.info_hash}"
