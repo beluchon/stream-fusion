@@ -54,6 +54,23 @@ class StreamParser:
 
         return stream_list
 
+    def _generate_binge_group(self, torrent_item: TorrentItem, media: Media) -> str:
+        """Génère un bingeGroup intelligent selon le type de média"""
+        
+        if media.type == "movie":
+            return f"stream-fusion-{torrent_item.info_hash}"
+        
+        if media.type == "series":
+            series_id = media.id.split(":")[0] if ":" in media.id else media.id
+            quality = torrent_item.parsed_data.quality[0] if torrent_item.parsed_data.quality else "Unknown"
+            debrid = torrent_item.availability or "DL"
+            return f"stream-fusion-{series_id}-{quality}-{debrid}"
+        
+        # Fallback
+        return f"stream-fusion-{torrent_item.info_hash}"
+
+
+
     def _parse_to_debrid_stream(
         self, torrent_item: TorrentItem, results: queue.Queue, media: Media
     ) -> None:
@@ -71,14 +88,14 @@ class StreamParser:
                 "description": title,
                 "url": f"{self.config['addonHost']}/playback/{self.configb64}/{queryb64}",
                 "behaviorHints": {
-                    "bingeGroup": f"stream-fusion-{torrent_item.info_hash}",
+                    "bingeGroup": self._generate_binge_group(torrent_item, media),
                     "filename": torrent_item.file_name or torrent_item.raw_title,
                 },
             }
         )
 
         if self.config["torrenting"] and torrent_item.privacy == "public":
-            self._add_direct_torrent_stream(torrent_item, parsed_data, title, results)
+            self._add_direct_torrent_stream(torrent_item, parsed_data, title, results, media)
 
     def _create_stream_name(
         self, torrent_item: TorrentItem, parsed_data: ParsedData
@@ -159,6 +176,7 @@ class StreamParser:
         parsed_data: ParsedData,
         title: str,
         results: queue.Queue,
+        media: Media,
     ) -> None:
         direct_torrent_name = f"{DIRECT_TORRENT}\n{parsed_data.quality}\n"
         if parsed_data.quality and parsed_data.quality[0] not in ["Unknown", ""]:
@@ -173,7 +191,7 @@ class StreamParser:
                     int(torrent_item.file_index) if torrent_item.file_index else None
                 ),
                 "behaviorHints": {
-                    "bingeGroup": f"stream-fusion-{torrent_item.info_hash}",
+                    "bingeGroup": self._generate_binge_group(torrent_item, media),
                     "filename": torrent_item.file_name or torrent_item.raw_title,
                 },
             }
