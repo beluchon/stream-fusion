@@ -71,21 +71,6 @@ async def full_prefetch_from_cache(media, config, redis_cache, stream_cache_key,
         if cached_next is None:
             logger.debug(f"Pre-fetch: Starting full background search for next episode {next_episode_id}")
             
-            from stream_fusion.utils.cache.cache import search_public
-            from stream_fusion.utils.filter_results import filter_items, merge_items, sort_items
-            from stream_fusion.utils.jackett.jackett_result import JackettResult
-            from stream_fusion.utils.jackett.jackett_service import JackettService
-            from stream_fusion.utils.parser.parser_service import StreamParser
-            from stream_fusion.utils.sharewood.sharewood_service import SharewoodService
-            from stream_fusion.utils.yggfilx.yggflix_service import YggflixService
-            from stream_fusion.utils.torrent.torrent_service import TorrentService
-            from stream_fusion.utils.torrent.torrent_smart_container import TorrentSmartContainer
-            from stream_fusion.utils.zilean.zilean_result import ZileanResult
-            from stream_fusion.utils.zilean.zilean_service import ZileanService
-            from stream_fusion.utils.filter.results_per_quality_filter import ResultsPerQualityFilter
-            from stream_fusion.web.root.search.schemas import Stream
-            from stream_fusion.services.postgresql.dao.torrentitem_dao import TorrentItemDAO
-            
             next_media = await asyncio.wait_for(
                 redis_cache.get_or_set(lambda: get_metadata(next_episode_id, stream_type), next_episode_id, stream_type, config["metadataProvider"]),
                 timeout=5.0
