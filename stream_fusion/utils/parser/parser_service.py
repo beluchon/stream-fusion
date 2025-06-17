@@ -61,17 +61,17 @@ class StreamParser:
             return f"stream-fusion-{torrent_item.info_hash}"
         
         if media.type == "series":
+            # Pour les séries, utiliser l'ID de la série + résolution + team pour permettre
+            # la lecture automatique même avec des torrents d'épisodes individuels
             series_id = media.id.split(":")[0] if ":" in media.id else media.id
-            if torrent_item.parsed_data.quality:
-                if isinstance(torrent_item.parsed_data.quality, list):
-                    quality = torrent_item.parsed_data.quality[0] if torrent_item.parsed_data.quality else "Unknown"
-                else:
-                    quality = torrent_item.parsed_data.quality 
-                quality = "Unknown"
-            debrid = torrent_item.availability or "DL"
-            binge_group = f"stream-fusion-{series_id}-{quality}-{debrid}"
+            resolution = torrent_item.parsed_data.resolution if torrent_item.parsed_data.resolution else "Unknown"
             
-            return binge_group
+            # Ajouter la team si disponible pour une meilleure granularité
+            team = extract_release_group(torrent_item.raw_title) or torrent_item.parsed_data.group
+            if team:
+                return f"stream-fusion-{series_id}-{resolution}-{team}"
+            else:
+                return f"stream-fusion-{series_id}-{resolution}"
         
         # Fallback
         return f"stream-fusion-{torrent_item.info_hash}"
