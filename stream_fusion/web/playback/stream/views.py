@@ -121,31 +121,64 @@ async def handle_download(
     # Durée de vie courte (30 secondes) pour éviter les appels répétés lors d'une même session de visionnage
     stremthru_link_key = f"stremthru_link:{api_key}:{json.dumps(query)}_{ip}"
 
-    # Check if a download is already in progress
-    if await redis_cache.get(cache_key) == DOWNLOAD_IN_PROGRESS_FLAG:
-        logger.info("Playback: Download already in progress")
+    ready_cache_key = f"ready:{api_key}:{json.dumps(query)}_{ip}"
+    if await redis_cache.get(ready_cache_key) == "READY":
+        logger.info("Playback: File already marked as ready, checking for cached direct link")
         
-        # Vérifier si le magnet est déjà disponible sur StremThru
-        if config.get("stremthru") and query.get("service") in ["ST", "RD", "AD", "PM", "TB", "OC", "DL", "ED", "PK"]:
+        direct_link_cache_key = f"direct_link:{api_key}:{json.dumps(query)}_{ip}"
+        cached_direct_link = await redis_cache.get(direct_link_cache_key)
+        
+        if cached_direct_link:
+            logger.info("Playback: Direct link found in cache, returning immediately")
+            return cached_direct_link
+        
+        debrid_service = get_download_service(config)
+        if debrid_service:
             try:
-                # Vérifier d'abord si un lien de streaming a déjà été généré récemment
+                direct_link = debrid_service.get_stream_link(query, config, ip)
+                if direct_link and direct_link != settings.no_cache_video_url:          
+                    await redis_cache.set(direct_link_cache_key, direct_link, expiration=600) 
+                    logger.info("Playback: Direct link generated and cached")
+                    return direct_link
+            except Exception:
+                pass
+
+    download_flag = await redis_cache.get(cache_key)
+    if download_flag == DOWNLOAD_IN_PROGRESS_FLAG:
+        logger.info("Playback: Download in progress, checking if file is now ready")
+        
+        try:
+            debrid_service = get_download_service(config)
+            if debrid_service:
+                try:
+                    direct_link = debrid_service.get_stream_link(query, config, ip)
+                    if direct_link and direct_link != settings.no_cache_video_url:
+                        logger.success("Playback: File is now ready! Clearing download flag and returning direct link")
+                        await redis_cache.delete(cache_key)
+                        ready_cache_key = f"ready:{api_key}:{json.dumps(query)}_{ip}"
+                        await redis_cache.set(ready_cache_key, "READY", expiration=300)        
+                        direct_link_cache_key = f"direct_link:{api_key}:{json.dumps(query)}_{ip}"
+                        await redis_cache.set(direct_link_cache_key, direct_link, expiration=600)  
+                except Exception as link_error:
+                    logger.debug(f"Playback: File not ready yet: {str(link_error)}")
+        except Exception as e:
+            logger.warning(f"Playback: Error checking download status: {str(e)}")
+        
+        if config.get("stremthru") and query.get("service") in ["ST", "RD", "AD", "PM", "TB", "OC", "DL", "ED", "PK"]:
+            try:    
                 cached_link = await redis_cache.get(stremthru_link_key)
                 if cached_link:
                     logger.info(f"Playback: Utilisation d'un lien de streaming StremThru mis en cache")
                     return cached_link
                 
-                # Importer StremThru
                 from stream_fusion.utils.debrid.stremthru import StremThru
                 
-                # Utiliser la fonction get_download_service déjà importée au niveau global
                 stremthru_service = get_download_service(config)
                 
-                # Vérifier que le service est bien une instance de StremThru
                 if not isinstance(stremthru_service, StremThru):
                     logger.warning(f"Playback: Le service de téléchargement n'est pas StremThru, c'est {type(stremthru_service).__name__}")
                     return settings.no_cache_video_url
                 
-                # Essayer directement de générer un lien de streaming sans vérification préalable
                 magnet = query.get("magnet")
                 if magnet:
                     logger.info(f"Playback: Génération directe d'un lien de streaming via StremThru")
@@ -167,7 +200,7 @@ async def handle_download(
 
     # Mark the start of the download
     await redis_cache.set(
-        cache_key, DOWNLOAD_IN_PROGRESS_FLAG, expiration=600  # 10 minute expiration
+        cache_key, DOWNLOAD_IN_PROGRESS_FLAG, expiration=600  
     )
 
     try:
@@ -264,7 +297,7 @@ async def get_stream_link(
 
     if link != settings.no_cache_video_url:
         logger.debug(f"Playback: Caching new stream link: {link}")
-        await redis_cache.set(cache_key, link, expiration=3600)  # Cache for 1 hour
+        await redis_cache.set(cache_key, link, expiration=1200)  # Cache for 20 minutes
         logger.info(f"Playback: New stream link generated and cached: {link}")
     else:
         logger.debug("Playback: Stream link not cached (NO_CACHE_VIDEO_URL)")
