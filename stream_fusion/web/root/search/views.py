@@ -342,7 +342,7 @@ async def get_results(
                     public_cached_results = [
                         JackettResult().from_cached_item(torrent, media)
                         for torrent in public_cached_results
-                        if len(torrent.get("hash", "")) == 40
+                        if isinstance(torrent, dict) and len(torrent.get("hash", "")) == 40
                     ]
                     public_cached_results = filter_items(
                         public_cached_results, media, config=config
