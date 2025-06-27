@@ -77,14 +77,36 @@ class AllDebrid(BaseDebrid):
 
             matching_files = []
             for file in data["magnets"]["links"]:
-                if season_episode_in_filename(file["filename"], numeric_season, numeric_episode):
+                filename = file["filename"]
+                logger.debug(f"AllDebrid: Checking file: {filename}")
+                
+                if season_episode_in_filename(filename, numeric_season, numeric_episode):
+                    logger.debug(f"AllDebrid: ✓ Match found with RTN parser: {filename}")
                     matching_files.append(file)
+                else:
+                    import re
+                    episode_patterns = [
+                        rf"[Ss]{numeric_season:02d}[Ee]{numeric_episode:02d}",  # S01E02
+                        rf"[Ss]{numeric_season}[Ee]{numeric_episode:02d}",      # S1E02  
+                        rf"{numeric_season:02d}x{numeric_episode:02d}",         # 01x02
+                        rf"{numeric_season}x{numeric_episode:02d}",             # 1x02
+                        rf"[Ee]{numeric_episode:02d}",                          # E02 (pour saison unique)
+                        rf"[Ee]pisode.{numeric_episode:02d}",                   # Episode 02
+                        rf"\.{numeric_episode:02d}\.",                          # .02.
+                    ]
+                    
+                    for pattern in episode_patterns:
+                        if re.search(pattern, filename, re.IGNORECASE):
+                            logger.debug(f"AllDebrid: ✓ Match found with fallback pattern '{pattern}': {filename}")
+                            matching_files.append(file)
+                            break
+                    else:
+                        logger.debug(f"AllDebrid: ✗ No match: {filename}")
 
             if len(matching_files) == 0:
                 logger.warning(f"AllDebrid: No matching files found for S{numeric_season:02d}E{numeric_episode:02d}")
-                return None
+                return settings.no_cache_video_url
             else:
-                # Correspondance trouvée via filename parsing
                 link = max(matching_files, key=lambda x: x["size"])["link"]
         else:
             logger.error("AllDebrid: Unsupported stream type.")
@@ -114,15 +136,13 @@ class AllDebrid(BaseDebrid):
         result_magnets = []
         for hash_or_magnet in hashes_or_magnets:
             try:
-                # Marquer tous les magnets comme disponibles immédiatement
                 result_magnets.append({
                     "hash": hash_or_magnet,
                     "instant": True,
-                    "files": []  # Les fichiers seront remplis plus tard lors de l'appel à _update_availability_alldebrid
+                    "files": []
                 })
             except Exception as e:
                 logger.error(f"AllDebrid: Error processing hash {hash_or_magnet}: {str(e)}")
-                # Même en cas d'erreur, on marque comme disponible
                 result_magnets.append({
                     "hash": hash_or_magnet,
                     "instant": True,
