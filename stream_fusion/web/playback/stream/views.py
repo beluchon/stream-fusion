@@ -1,4 +1,5 @@
 from io import BytesIO
+import hashlib
 import json
 from urllib.parse import unquote
 import redis.asyncio as redis
@@ -117,8 +118,6 @@ async def handle_download(
     api_key = config.get("apiKey")
     cache_key = f"download:{api_key}:{json.dumps(query)}_{ip}"
     
-    # Clé de cache spécifique pour les liens de streaming StremThru
-    # Durée de vie courte (30 secondes) pour éviter les appels répétés lors d'une même session de visionnage
     stremthru_link_key = f"stremthru_link:{api_key}:{json.dumps(query)}_{ip}"
 
     ready_cache_key = f"ready:{api_key}:{json.dumps(query)}_{ip}"
@@ -183,12 +182,10 @@ async def handle_download(
                 if magnet:
                     logger.info(f"Playback: Génération directe d'un lien de streaming via StremThru")
                     
-                    # Essayer de générer un lien de streaming sans vérification
                     stream_link = stremthru_service.get_stream_link(query, config, ip)
                     
                     if stream_link:
                         logger.success(f"Playback: Lien de streaming généré avec succès via StremThru")
-                        # Mettre en cache le lien pendant 30 secondes pour éviter les appels répétés
                         await redis_cache.set(stremthru_link_key, stream_link, expiration=30)
                         return stream_link
                     else:
@@ -247,7 +244,6 @@ async def handle_download(
                 else None
             )
             try:
-                # Start background caching
                 if debrid_service.start_background_caching(magnet, query):
                     logger.success(
                         f"Playback: Started background caching for magnet: {magnet[:50]}"
@@ -271,26 +267,56 @@ async def handle_download(
 
 
 async def get_stream_link(
-    decoded_query: str, config: dict, ip: str, redis_cache: RedisCache, cache_user_identifier: str
+    decoded_query: str, config: dict, ip: str, redis_cache: RedisCache, cache_user_identifier: str, stream_id: str = None
 ) -> str:
     logger.debug(f"Playback: Getting stream link for query: {decoded_query}, IP: {ip}")
-    cache_key = f"stream_link:{cache_user_identifier}:{decoded_query}"
+    
+    query = json.loads(decoded_query)
+    if stream_id and query.get("type") == "series":
+        cache_key = f"stream_link:{cache_user_identifier}:{stream_id}:{query.get('service', '')}"
+        current_source_key = f"current_source:{cache_user_identifier}:{stream_id}:{query.get('service', '')}"
+        logger.info(f"Playback: get_stream_link using series cache key: {cache_key}")
+        logger.info(f"Playback: get_stream_link Stream ID: {stream_id}, Service: {query.get('service', '')}")
+    else:
+        cache_key = f"stream_link:{cache_user_identifier}:{decoded_query}"
+        current_source_key = f"current_source:{cache_user_identifier}:{decoded_query}"
+        logger.info(f"Playback: get_stream_link using fallback cache key: {cache_key}")
+
+    magnet = query.get("magnet")
+    info_hash = query.get("info_hash")
+    service = query.get("service", False)
+    
+    if magnet or info_hash:
+        source_info = {
+            "magnet": magnet,
+            "info_hash": info_hash,
+            "raw_title": query.get("title", ""),
+            "service": service,
+            "indexer": query.get("indexer", "")
+        }
+        await redis_cache.set(current_source_key, source_info, expiration=1200)
+        logger.debug(f"Playback: Stored current source for binge group: {magnet[:50] if magnet else info_hash}")
 
     cached_link = await redis_cache.get(cache_key)
     if cached_link:
         logger.info(f"Playback: Stream link found in cache: {cached_link}")
         return cached_link
 
-    logger.debug("Playback: Stream link not found in cache, generating new link")
+    debrid_service = get_download_service(config)
+    
+    if not debrid_service:
+        logger.error("Playback: No debrid service available")
+        raise HTTPException(status_code=500, detail="No debrid service available")
 
-    query = json.loads(decoded_query)
-    service = query.get("service", False)
-
-    if service == "DL":
-        link = await handle_download(query, config, ip, redis_cache)
-    elif service:
-        debrid_service = get_debrid_service(config, service)
+    if service:
+        logger.debug(f"Playback: Getting stream link from {service}")
         link = debrid_service.get_stream_link(query, config, ip)
+        
+        if link is None:
+            logger.error("Playback: Debrid service returned None instead of a valid link")
+            logger.error(f"Playback: Query: {decoded_query}")
+            logger.error(f"Playback: Service: {service}")
+            raise HTTPException(status_code=500, detail="Debrid service failed to provide a valid stream link")
     else:
         logger.error("Playback: Service not found in query")
         raise HTTPException(status_code=500, detail="Service not found in query")
@@ -353,12 +379,38 @@ async def get_playback(
         try:
             if await lock.acquire(blocking=False):
                 logger.debug("Playback: Lock acquired, getting stream link")
-                # Pass cache_user_identifier to get_stream_link
-                link = await get_stream_link(decoded_query, config, ip, redis_cache, cache_user_identifier)
+                # Extraire stream_id depuis le referer pour la cohérence avec le pre-fetch
+                stream_id = None
+                referer = request.headers.get("referer", "")
+                if "/stream/" in referer:
+                    try:
+                        # Extract stream_id from referer URL like: .../stream/series/tt10919420:3:1
+                        stream_id = referer.split("/stream/")[1].split("/")[-1].replace(".json", "")
+                        logger.debug(f"Playback: Extracted stream_id from referer: {stream_id}")
+                    except:
+                        pass
+                
+                link = await get_stream_link(decoded_query, config, ip, redis_cache, cache_user_identifier, stream_id)
             else:
                 logger.debug("Playback: Lock not acquired, waiting for cached link")
-                # Use cache_user_identifier for cache key lookup
-                cache_key = f"stream_link:{cache_user_identifier}:{decoded_query}"
+                # Extract stream_id from referer (same logic as above)
+                stream_id = None
+                referer = request.headers.get("referer", "")
+                if "/stream/" in referer:
+                    try:
+                        stream_id = referer.split("/stream/")[1].split("/")[-1].replace(".json", "")
+                    except:
+                        pass
+                
+                # Use same cache key logic as get_stream_link
+                if stream_id and query_dict.get("type") == "series":
+                    cache_key = f"stream_link:{cache_user_identifier}:{stream_id}:{query_dict.get('service', '')}"
+                    logger.info(f"Playback: Using series cache key: {cache_key}")
+                    logger.info(f"Playback: Stream ID: {stream_id}, Service: {query_dict.get('service', '')}")
+                else:
+                    cache_key = f"stream_link:{cache_user_identifier}:{decoded_query}"
+                    logger.info(f"Playback: Using fallback cache key: {cache_key}")
+                    
                 for _ in range(30):
                     await asyncio.sleep(1)
                     cached_link = await redis_cache.get(cache_key)
