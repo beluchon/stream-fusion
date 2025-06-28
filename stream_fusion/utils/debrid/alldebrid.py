@@ -86,21 +86,25 @@ class AllDebrid(BaseDebrid):
                 else:
                     import re
                     episode_patterns = [
-                        rf"[Ss]{numeric_season:02d}[Ee]{numeric_episode:02d}",  # S01E02
-                        rf"[Ss]{numeric_season}[Ee]{numeric_episode:02d}",      # S1E02  
-                        rf"{numeric_season:02d}x{numeric_episode:02d}",         # 01x02
-                        rf"{numeric_season}x{numeric_episode:02d}",             # 1x02
-                        rf"[Ee]{numeric_episode:02d}",                          # E02 (pour saison unique)
-                        rf"[Ee]pisode.{numeric_episode:02d}",                   # Episode 02
-                        rf"\.{numeric_episode:02d}\.",                          # .02.
+                        rf"[Ss]{numeric_season:02d}[Ee]{numeric_episode:02d}",  
+                        rf"[Ss]{numeric_season}[Ee]{numeric_episode:02d}",      
+                        rf"{numeric_season:02d}x{numeric_episode:02d}",         
+                        rf"{numeric_season}x{numeric_episode:02d}",             
+                        rf"[Ss]eason.{numeric_season:02d}.*[Ee]{numeric_episode:02d}",  
+                        rf"[Ss]eason.{numeric_season}.*[Ee]{numeric_episode:02d}",      
+                        rf"[Ss]{numeric_season:02d}.*[Ee]pisode.{numeric_episode:02d}",  
+                        rf"[Ss]{numeric_season}.*[Ee]pisode.{numeric_episode:02d}",     
                     ]
                     
+                    match_found = False
                     for pattern in episode_patterns:
                         if re.search(pattern, filename, re.IGNORECASE):
-                            logger.debug(f"AllDebrid: ✓ Match found with fallback pattern '{pattern}': {filename}")
+                            logger.debug(f"AllDebrid: ✓ Match found with improved pattern '{pattern}': {filename}")
                             matching_files.append(file)
+                            match_found = True
                             break
-                    else:
+                    
+                    if not match_found:
                         logger.debug(f"AllDebrid: ✗ No match: {filename}")
 
             if len(matching_files) == 0:
