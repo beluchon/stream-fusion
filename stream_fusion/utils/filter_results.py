@@ -157,6 +157,12 @@ def remove_non_matching_title(items, titles):
         cleaned_item_title = integrale_pattern.sub(
             "", item.parsed_data.parsed_title
         ).strip()
+        
+        if item.indexer and "Yggtorrent" in item.indexer:
+            logger.debug(f"Filters: YggFlix item detected, accepting: {cleaned_item_title}")
+            filtered_items.append(item)
+            continue
+        
         for title in cleaned_titles:
             logger.trace(
                 f"Filters: Comparing item title: {cleaned_item_title} with title: {title}"
@@ -201,7 +207,6 @@ def filter_items(items, media, config):
         # "resultsPerQuality": ResultsPerQualityFilter(config),
     }
     
-    # Filtre de priorité de langue à appliquer en dernier
     language_priority_filter = LanguagePriorityFilter(config)
 
     logger.info(f"Filters: Initial item count: {len(items)}")
@@ -236,14 +241,11 @@ def filter_items(items, media, config):
                 f"Filters: Error while applying {filter_name} filter", exc_info=e
             )
 
-    # Appliquer le filtre de priorité de langue en dernier pour trier les résultats
     try:
         logger.info(f"Filters: Applying language priority filter")
         items = language_priority_filter(items)
         logger.success(f"Filters: Items sorted by language priority")
         
-        # Tri secondaire par qualité au sein de chaque groupe linguistique
-        # Regrouper les torrents par priorité de langue
         language_groups = {}
         for item in items:
             priority = getattr(item, 'language_priority', 999)
@@ -251,11 +253,9 @@ def filter_items(items, media, config):
                 language_groups[priority] = []
             language_groups[priority].append(item)
         
-        # Trier chaque groupe par qualité et taille selon la méthode de tri configurée
         sorted_items = []
         for priority in sorted(language_groups.keys()):
             group_items = language_groups[priority]
-            # Appliquer le même tri que celui configuré globalement
             sorted_group = items_sort(group_items, config)
             sorted_items.extend(sorted_group)
             
