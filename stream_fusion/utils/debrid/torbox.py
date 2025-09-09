@@ -33,7 +33,7 @@ class Torbox(BaseDebrid):
     def add_magnet(self, magnet, ip=None, privacy="private"):
         logger.info(f"Torbox: Adding magnet: {magnet[:50]}...")
         url = f"{self.base_url}/torrents/createtorrent"
-        seed = 2 if privacy == "private" else 1
+        seed = 3 if privacy == "private" else 1
         data = {
             "magnet": magnet,
             "seed": seed,
@@ -46,7 +46,7 @@ class Torbox(BaseDebrid):
     def add_torrent(self, torrent_file, privacy="private"):
         logger.info("Torbox: Adding torrent file")
         url = f"{self.base_url}/torrents/createtorrent"
-        seed = 2 if privacy == "private" else 1
+        seed = 3 if privacy == "private" else 1
         data = {
             "seed": seed,
             "allow_zip": "false"
