@@ -19,12 +19,22 @@ class ZileanService:
         self._cache_ttl = 3600  # 1 heure en secondes
 
     def search(self, media: Union[Movie, Series]) -> List[DMMTorrentInfo]:
+        # Vérification : si Zilean désactivé au niveau système, retourner liste vide
+        if not settings.zilean_enabled:
+            logger.debug("Zilean search skipped: disabled at system level")
+            return []
+
+        # Vérification : si l'instance est marquée comme disabled
+        if hasattr(self.zilean_api, 'disabled') and self.zilean_api.disabled:
+            logger.debug("Zilean search skipped: API instance is disabled")
+            return []
+
         # Vérifier si nous avons déjà des résultats en cache pour ce média
         cache_key = self._get_cache_key(media)
         cached_results = self._get_from_cache(cache_key)
         if cached_results:
             return cached_results
-            
+
         # Sinon, effectuer la recherche
         if isinstance(media, Movie):
             results = self.__search_movie(media)
@@ -32,7 +42,7 @@ class ZileanService:
             results = self.__search_series(media)
         else:
             raise TypeError("Only Movie and Series are allowed as media!")
-            
+
         # Stocker les résultats dans le cache
         self._add_to_cache(cache_key, results)
         return results

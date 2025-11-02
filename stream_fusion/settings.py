@@ -154,6 +154,7 @@ class Settings(BaseSettings):
     jackett_enable: bool = check_env_variable("JACKETT_API_KEY")
 
     # ZILEAN DMM API
+    zilean_enabled: bool = os.getenv("ZILEAN_ENABLED", "true").lower() == "true"
     zilean_host: str = "zilean"
     zilean_port: int = 8181
     

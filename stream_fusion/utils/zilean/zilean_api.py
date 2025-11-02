@@ -83,6 +83,13 @@ class ZileanAPI:
         pool_maxsize: int = settings.zilean_api_pool_maxsize,
         max_retries: int = settings.zilean_max_retry,
     ):
+        # Vérifier si Zilean est activé au niveau système
+        if not settings.zilean_enabled:
+            logger.info("Zilean is disabled via ZILEAN_ENABLED environment variable")
+            self.disabled = True
+            return
+
+        self.disabled = False
         self.base_url = settings.zilean_url
         if not self.base_url:
             logger.error("Zilean API URL is not set in the environment variables.")
