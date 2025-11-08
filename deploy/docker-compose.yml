@@ -1,126 +1,43 @@
----
-networks:
-  proxy_network:
-    external: true
-
-services:
-
-  stream-fusion:
-    image: ghcr.io/telkaoss/stream-fusion:latest
+stream-fusion:
+    image: ghcr.io/beluchon/stream-fusion:latest
     container_name: stream-fusion
+    restart: unless-stopped
+    ports:
+      - 8081:8080
     environment:
-      SECRET_API_KEY: ${SECRET_API_KEY:?Please provide a secret API key in the environment}
-      TMDB_API_KEY: ${TMDB_API_KEY:?Please provide a TMDB API key in the environment}
-      JACKETT_API_KEY: ${JACKETT_API_KEY:-''}
-      RD_TOKEN: ${RD_TOKEN:-''}
-      AD_TOKEN: ${AD_TOKEN:-''}
-      YGG_PASSKEY: ${YGG_PASSKEY:-''}
-      SHAREWOOD_PASSKEY: ${SHAREWOOD_PASSKEY:-''}
-      REDIS_HOST: ${REDIS_HOST:-stremio-redis}
-      PG_HOST: ${POSTGRES_HOST:-stremio-postgres}
-      PG_USER: ${POSTGRES_USER:-stremio}
-      PG_PASS: ${POSTGRES_PASSWORD:-stremio}
-      USE_HTTPS: ${USE_HTTPS:-True}
-      PROXY_URL: ${PROXY_URL:-http://warp:1080}
-      TZ: ${TZ:-Europe/London}
-    expose:
-      - 8080
+      - SECRET_API_KEY=testuu
+      - TMDB_API_KEY=
+      - YGG_PASSKEY=
+      - SHAREWOOD_PASSKEY=
+      - REDIS_HOST=stremio-redis
+      - PG_HOST=stremio-postgres
+      - PG_USER=stremio
+      - PG_PASS=stremio
+      - USE_HTTPS=True
+      - TZ=Europe/Paris
+      - ZILEAN_ENABLED=false
     volumes:
-      - stream-fusion:/app/config
+      - ./data/stream-fusion:/app/config
     depends_on:
       - stremio-postgres
       - stremio-redis
-      - zilean
-      - jackett
-    restart: unless-stopped
-    networks:
-      - proxy_network
 
   stremio-redis:
     image: redis:latest
     container_name: stremio-redis
-    expose:
-      - 6379
+    restart: unless-stopped
     volumes:
-      - stremio-redis:/data
+      - ./data/stremio-redis:/data
     command: redis-server --appendonly yes
-    restart: unless-stopped
-    networks:
-      - proxy_network
-
-  zilean:
-    image: ipromknight/zilean:latest
-    container_name: zilean
-    restart: unless-stopped
-    expose:
-      - 8181
-    volumes:
-      - zilean-data:/app/data
-    environment:
-        Zilean__Database__ConnectionString: ${ZILEAN_DB_CONNECTION_STRING:-Host=stremio-postgres;Port=5432;Database=zilean;Username=stremio;Password=stremio}
-        Zilean__Dmm__ImportBatched: ${ZILEAN_DMM_IMPORT_BATCHED:-True}
-        Zilean__Dmm__MaxFilteredResults: ${ZILEAN_DMM_MAX_FILTERED_RESULTS:-200}
-        Zilean__Dmm__MinimumScoreMatch: ${ZILEAN_DMM_MINIMUM_SCORE_MATCH:-0.85}
-        Zilean__Imdb__EnableEndpoint: ${ZILEAN_IMDB_ENABLE_ENDPOINT:-False}
-        Zilean__Imdb__EnableImportMatching: ${ZILEAN_IMDB_ENABLE_IMPORT_MATCHING:-False}
-    depends_on:
-      - stremio-postgres
-    networks:
-      - proxy_network
 
   stremio-postgres:
     image: postgres:16.3-alpine3.20
     container_name: stremio-postgres
     restart: unless-stopped
     environment:
-      PGDATA: /var/lib/postgresql/data/pgdata
-      POSTGRES_USER: ${POSTGRES_USER:-stremio}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stremio}
-      POSTGRES_DB: ${POSTGRES_DB:-zilean}
-    expose:
-      - 5432
+      - PGDATA=/var/lib/postgresql/data/pgdata
+      - POSTGRES_USER=stremio
+      - POSTGRES_PASSWORD=stremio
+      - POSTGRES_DB=zilean
     volumes:
-      - stremio-postgres:/var/lib/postgresql/data/pgdata
-    networks:
-      - proxy_network
-
-  jackett:
-    image: lscr.io/linuxserver/jackett:latest
-    container_name: jackett
-    environment:
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
-      - TZ=${TZ:-Europe/London}
-    volumes:
-      - jackett-data:/config
-    expose:
-      - 9117
-    restart: unless-stopped
-    networks:
-      - proxy_network
-
-  warp:
-    image: caomingjun/warp
-    container_name: warp
-    restart: always
-    expose:
-      - 1080
-    environment:
-      - WARP_SLEEP=2
-    cap_add:
-      - NET_ADMIN
-    sysctls:
-      - net.ipv6.conf.all.disable_ipv6=0
-      - net.ipv4.conf.all.src_valid_mark=1
-    volumes:
-      - warp-data:/var/lib/cloudflare-warp
-    networks:
-      - proxy_network
-
-volumes:
-  stremio-postgres:
-  stremio-redis:
-  stream-fusion:
-  zilean-data:
-  jackett-data:
-  warp-data:
+      - ./data/stremio-postgres:/var/lib/postgresql/data/pgdata
