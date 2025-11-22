@@ -146,13 +146,6 @@ class Settings(BaseSettings):
     # TMDB
     tmdb_api_key: str | None = None
 
-    # JACKETT
-    jackett_host: str = "jackett"
-    jackett_schema: str = "http"
-    jackett_port: int = 9117
-    jackett_api_key: str | None = None
-    jackett_enable: bool = check_env_variable("JACKETT_API_KEY")
-
     # ZILEAN DMM API
     zilean_enabled: bool = os.getenv("ZILEAN_ENABLED", "true").lower() == "true"
     zilean_host: str = "zilean"
@@ -230,21 +223,6 @@ class Settings(BaseSettings):
             password=self.pg_pass,
             path=f"/{self.pg_base}",
         )
-
-    @property
-    def jackett_url(self) -> URL:
-        """
-        Assemble Jackett URL from settings.
-        :return: Jackett URL.
-        """
-        url = URL.build(
-            scheme=self.jackett_schema,
-            host=self.jackett_host,
-            port=self.jackett_port,
-        )
-        if self.jackett_api_key:
-            url = url.with_query({"apikey": self.jackett_api_key})
-        return url
 
     @property
     def zilean_url(self) -> URL:
