@@ -33,7 +33,6 @@ async def configure(request: Request):
         "ad_unique_account": settings.ad_unique_account,
         "sharewood_unique_account": settings.sharewood_unique_account,
         "ygg_unique_account": settings.ygg_unique_account,
-        "jackett_enable": settings.jackett_enable,
         "tb_unique_account": settings.tb_unique_account,
         "zilean_enabled": settings.zilean_enabled,
     })
