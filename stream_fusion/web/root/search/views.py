@@ -343,7 +343,7 @@ async def get_results(
                         if isinstance(torrent, dict) and len(torrent.get("hash", "")) == 40:
                             try:
                                 t_item = TorrentItem(
-                                    name=torrent['title'],
+                                    raw_title=torrent['title'],
                                     size=int(torrent['size']),
                                     magnet=torrent['magnet'],
                                     info_hash=torrent['hash'],
