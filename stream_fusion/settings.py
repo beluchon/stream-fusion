@@ -150,6 +150,11 @@ class Settings(BaseSettings):
     zilean_enabled: bool = os.getenv("ZILEAN_ENABLED", "true").lower() == "true"
     zilean_host: str = "zilean"
     zilean_port: int = 8181
+    zilean_schema: str = "http"
+    zilean_max_workers: int = 4
+    zilean_pool_connections: int = 10
+    zilean_api_pool_maxsize: int = 10
+    zilean_max_retry: int = 3
     
     # DEBRIDLINK
     dl_token: str | None = None
@@ -166,11 +171,6 @@ class Settings(BaseSettings):
     # PIKPAK
     pp_credentials: str | None = None
     pp_unique_account: bool = check_env_variable("PP_CREDENTIALS")
-    zilean_schema: str = "http"
-    zilean_max_workers: int = 4
-    zilean_pool_connections: int = 10
-    zilean_api_pool_maxsize: int = 10
-    zilean_max_retry: int = 3
 
     # YGGFLIX
     yggflix_url: str = "https://yggflix.fr"
@@ -183,6 +183,11 @@ class Settings(BaseSettings):
     sharewood_max_workers: int = 4
     sharewood_passkey: str | None = None
     sharewood_unique_account: bool = check_env_variable("SHAREWOOD_PASSKEY")
+
+    # COMET
+    # URL par défaut mise à jour avec la vôtre
+    comet_url: str = "https://comet.beluchon.top"
+    comet_enabled: bool = os.getenv("COMET_ENABLED", "true").lower() == "true"
 
     # PUBLIC_CACHE
     public_cache_url: str = "https://stremio-jackett-cacher.elfhosted.com/"
