@@ -13,7 +13,7 @@ from stream_fusion.settings import settings
 def search_public(media):
     logger.info("Searching for public cached " + media.type + " results")
     url = settings.public_cache_url + "getResult/" + media.type + "/"
-    # Without that, the cache doesn't return results. Maybe make multiple requests? One for each language, just like jackett?
+    # Without that, the cache doesn't return results. Maybe make multiple requests? One for each language.
     cache_search = media.__dict__
     cache_search["title"] = cache_search["titles"][0]
     cache_search["language"] = cache_search["languages"][0]
