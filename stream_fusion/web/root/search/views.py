@@ -3,7 +3,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Request
 from uuid import UUID
 import asyncio
-
+from RTN import parse
 
 from stream_fusion.services.postgresql.dao.apikey_dao import APIKeyDAO
 from stream_fusion.services.postgresql.dao.torrentitem_dao import TorrentItemDAO
@@ -20,8 +20,6 @@ from stream_fusion.utils.filter_results import (
     sort_items,
 )
 from stream_fusion.logging_config import logger
-from stream_fusion.utils.jackett.jackett_result import JackettResult
-from stream_fusion.utils.jackett.jackett_service import JackettService
 from stream_fusion.utils.parser.parser_service import StreamParser
 from stream_fusion.utils.sharewood.sharewood_service import SharewoodService
 from stream_fusion.utils.yggfilx.yggflix_service import YggflixService
@@ -339,13 +337,30 @@ async def get_results(
                     logger.success(
                         f"Search: Found {len(public_cached_results)} public cached results"
                     )
-                    public_cached_results = [
-                        JackettResult().from_cached_item(torrent, media)
-                        for torrent in public_cached_results
-                        if isinstance(torrent, dict) and len(torrent.get("hash", "")) == 40
-                    ]
+                    
+                    processed_public_results = []
+                    for torrent in public_cached_results:
+                        if isinstance(torrent, dict) and len(torrent.get("hash", "")) == 40:
+                            try:
+                                t_item = TorrentItem(
+                                    name=torrent['title'],
+                                    size=int(torrent['size']),
+                                    magnet=torrent['magnet'],
+                                    info_hash=torrent['hash'],
+                                    link=torrent['magnet'],
+                                    seeders=int(torrent['seeders']),
+                                    languages=torrent['language'].split(";") if torrent['language'] else [],
+                                    indexer="Public - Cache",
+                                    privacy="public",
+                                    type=media.type,
+                                    parsed_data=parse(torrent['title'])
+                                )
+                                processed_public_results.append(t_item)
+                            except Exception as e:
+                                logger.warning(f"Failed to parse cached item: {e}")
+
                     public_cached_results = filter_items(
-                        public_cached_results, media, config=config
+                        processed_public_results, media, config=config
                     )
                     public_cached_results = await torrent_service.convert_and_process(
                         public_cached_results
@@ -415,23 +430,6 @@ async def get_results(
                         search_results = merge_items(search_results, sharewood_search_results)
                 except Exception as e:
                     logger.warning(f"Search: Sharewood search failed, skipping: {str(e)}")
-
-            if config["jackett"] and len(search_results) < int(
-                config["minCachedResults"]
-            ):
-                jackett_service = JackettService(config)
-                jackett_search_results = jackett_service.search(media)
-                logger.success(
-                    f"Search: Found {len(jackett_search_results)} results from Jackett"
-                )
-                filtered_jackett_search_results = filter_items(
-                    jackett_search_results, media, config=config
-                )
-                if filtered_jackett_search_results:
-                    torrent_results = await torrent_service.convert_and_process(
-                        filtered_jackett_search_results
-                    )
-                    search_results = merge_items(search_results, torrent_results)
 
             if update_cache and search_results:
                 logger.info(
