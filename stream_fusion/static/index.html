@@ -77,7 +77,6 @@
                                 <p class="text-gray-500 dark:text-gray-300">Activate Real-Débrid service for streaming.
                                 </p>
                             </div>
-                            <!-- RealDebrid Token Info -->
                             <div id="rd_token_info_div" class="mt-4 space-y-3" style="display: none;">
                                 <p class="text-sm text-gray-400">Real-Debrid nécessite une authentification OAuth.</p>
                                 <button type="button" id="rd-auth-button" onclick="startRealDebridAuth()"
@@ -105,7 +104,6 @@
                                 <p class="text-gray-500 dark:text-gray-300">Activate AllDebrid service for streaming.
                                 </p>
                             </div>
-                            <!-- AllDebrid Token Info -->
                             <div id="ad_token_info_div" class="mt-4 space-y-3" style="display: none;">
                                 <p class="text-sm text-gray-400">AllDebrid nécessite une authentification OAuth.</p>
                                 <button type="button" id="ad-auth-button" onclick="startADAuth()"
@@ -132,7 +130,6 @@
                                 <label for="debrid_pm" class="font-medium text-white">Enable Premiumize Service</label>
                                 <p class="text-gray-500 dark:text-gray-300">Activate Premiumize service for streaming.</p>
                             </div>
-                            <!-- Premiumize Token Info -->
                             <div id="pm_token_info_div" class="mt-2" style="display: none;">
                                 <label for="pm_token_info" class="block text-sm font-medium leading-6 text-white">Premiumize
                                     API Key</label>
@@ -156,7 +153,6 @@
                                 <p class="text-gray-500 dark:text-gray-300">Activate TorBox service for streaming.
                                 </p>
                             </div>
-                            <!-- TorBox Token Info -->
                             <div id="tb_token_info_div" class="mt-2" style="display: none;">
                                 <label for="tb_token_info" class="block text-sm font-medium leading-6 text-white">TorBox API
                                     Key</label>
@@ -254,14 +250,12 @@
                     </div>
                 </div>
 
-                <!-- StremThru Section -->
                 <div class="border-b border-gray-900/10 dark:border-white/50 pb-12">
                     <div class="flex flex-col items-center">
                         <h2 class="text-white font-semibold leading-7">StremThru Settings</h2>
                         <p class="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-400">Configure StremThru as an optional interface.</p>
                     </div>
                     <div class="mt-10 space-y-10">
-                        <!-- Enable StremThru Checkbox -->
                         <div class="relative flex gap-x-3">
                             <div class="flex h-6 items-center">
                                 <input id="stremthru_enabled" name="stremthru_enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" onchange="toggleStremThruFields()">
@@ -271,7 +265,6 @@
                                 <p class="text-gray-500 dark:text-gray-300">Use StremThru to manage debrid services.</p>
                             </div>
                         </div>
-                        <!-- StremThru URL Input -->
                         <div id="stremthru_url_div" class="hidden"> 
                              <label for="stremthru_url" class="block text-sm font-medium leading-6 text-white">StremThru URL</label>
                              <input type="text" name="stremthru_url" id="stremthru_url"
@@ -279,7 +272,6 @@
                                     placeholder="https://stremthru.13377001.xyz/">
                              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Enter the URL of your StremThru instance.</p>
                         </div>
-                         <!-- StremThru Store Auth Input -->
                          <div id="stremthru_auth_div" class="hidden"> 
                               <label for="stremthru_store_auth" class="block text-sm font-medium leading-6 text-white">StremThru Store Authorization (Optional)</label>
                               <input type="text" name="stremthru_store_auth" id="stremthru_store_auth"
@@ -298,19 +290,6 @@
                     </div>
 
                     <div class="mt-10 space-y-10">
-                        {% if jackett_enable %}
-                        <div class="relative flex gap-x-3">
-                            <div class="flex h-6 items-center">
-                                <input id="jackett" name="jackett" type="checkbox"
-                                    class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
-                            </div>
-                            <div class="text-sm leading-6">
-                                <label for="jackett" class="font-medium text-white">Enable Jackett</label>
-                                <p class="text-gray-500 dark:text-gray-300">Use Jackett for more comprehensive results.
-                                </p>
-                            </div>
-                        </div>
-                        {% endif %}
 
                         <div class="relative flex gap-x-3">
                             <div class="flex h-6 items-center">
@@ -720,18 +699,6 @@
                                         HEVC
                                         (x265, H265, HEVC codec) quality</label>
                                 </div>
-                                <!-- <div class="flex items-center gap-x-3">
-                                    <input id="exclude_tc" name="exclude_tc" type="checkbox"
-                                        class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
-                                    <label for="exclude_tc" class="block text-sm font-medium leading-6 text-white">Exclude TC
-                                        (TeleCine) quality</label>
-                                </div>
-                                <div class="flex items-center gap-x-3">
-                                    <input id="exclude_scr" name="exclude_scr" type="checkbox"
-                                        class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
-                                    <label for="exclude_scr" class="block text-sm font-medium leading-6 text-white">Exclude SCR
-                                        (Screener) quality</label>
-                                </div> -->
                                 <div class="flex items-center gap-x-3">
                                     <input id="rips" name="rips" type="checkbox"
                                         class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
@@ -798,51 +765,6 @@
                                             class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
                                         <span class="ml-2 text-white">Français</span>
                                     </label>
-                                    <!-- <label class="inline-flex items-center">
-                                        <input id="es" type="checkbox" name="language" value="es"
-                                            class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-                                        <span class="ml-2 text-white">Español</span>
-                                    </label>
-                                    <label class="inline-flex items-center">
-                                        <input id="de" type="checkbox" name="language" value="de"
-                                            class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-                                        <span class="ml-2 text-white">German</span>
-                                    </label>
-                                    <label class="inline-flex items-center">
-                                        <input id="it" type="checkbox" name="language" value="it"
-                                            class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-                                        <span class="ml-2 text-white">Italiano</span>
-                                    </label>
-                                    <label class="inline-flex items-center">
-                                        <input id="pt" type="checkbox" name="language" value="pt"
-                                            class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-                                        <span class="ml-2 text-white">Português</span>
-                                    </label>
-                                    <label class="inline-flex items-center">
-                                        <input id="ru" type="checkbox" name="language" value="ru"
-                                            class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-                                        <span class="ml-2 text-white">Русский</span>
-                                    </label>
-                                    <label class="inline-flex items-center">
-                                        <input id="in" type="checkbox" name="language" value="in"
-                                            class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-                                        <span class="ml-2 text-white">Hindi</span>
-                                    </label>
-                                    <label class="inline-flex items-center">
-                                        <input id="nl" type="checkbox" name="language" value="nl"
-                                            class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-                                        <span class="ml-2 text-white">Dutch</span>
-                                    </label>
-                                    <label class="inline-flex items-center">
-                                        <input id="hu" type="checkbox" name="language" value="hu"
-                                            class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-                                        <span class="ml-2 text-white">Hungarian</span>
-                                    </label>
-                                    <label class="inline-flex items-center">
-                                        <input id="la" type="checkbox" name="language" value="la"
-                                            class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
-                                        <span class="ml-2 text-white">Latin</span>
-                                    </label> -->
                                     <label class="inline-flex items-center">
                                         <input id="multi" type="checkbox" name="language" value="multi" checked
                                             class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">
