@@ -23,6 +23,7 @@ from stream_fusion.logging_config import logger
 from stream_fusion.utils.parser.parser_service import StreamParser
 from stream_fusion.utils.sharewood.sharewood_service import SharewoodService
 from stream_fusion.utils.yggfilx.yggflix_service import YggflixService
+from stream_fusion.utils.comet.comet_service import CometService
 from stream_fusion.utils.metdata.cinemeta import Cinemeta
 from stream_fusion.utils.metdata.tmdb import TMDB
 from stream_fusion.utils.models.movie import Movie
@@ -94,6 +95,18 @@ async def full_prefetch_from_cache(media, config, redis_cache, stream_cache_key,
                         zilean_search_results = filter_items(zilean_search_results, next_media, config=config)
                         zilean_search_results = await torrent_service.convert_and_process(zilean_search_results)
                         search_results = merge_items(search_results, zilean_search_results)
+
+                # Comet
+                if settings.comet_enabled:
+                    try:
+                        comet_service = CometService()
+                        comet_results = await comet_service.search(next_media)
+                        if comet_results:
+                            comet_results = filter_items(comet_results, next_media, config=config)
+                            comet_results = await torrent_service.convert_and_process(comet_results)
+                            search_results = merge_items(search_results, comet_results)
+                    except Exception as e:
+                        logger.warning(f"Pre-fetch: Comet search failed: {e}")
                 
                 # YggFlix
                 if config["yggflix"] and len(search_results) < int(config["minCachedResults"]):
@@ -390,6 +403,19 @@ async def get_results(
                         f"Search: Zilean final search results: {len(zilean_search_results)}"
                     )
                     search_results = merge_items(search_results, zilean_search_results)
+
+            # Ajout de COMET
+            if settings.comet_enabled:
+                try:
+                    comet_service = CometService()
+                    comet_results = await comet_service.search(media)
+                    if comet_results:
+                        logger.success(f"Search: Found {len(comet_results)} results from Comet")
+                        comet_results = filter_items(comet_results, media, config=config)
+                        comet_results = await torrent_service.convert_and_process(comet_results)
+                        search_results = merge_items(search_results, comet_results)
+                except Exception as e:
+                    logger.error(f"Search: Comet search failed: {e}")
 
             # Ensuite YggFlix si pas assez de résultats
             if config["yggflix"] and len(search_results) < int(
