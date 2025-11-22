@@ -9,7 +9,7 @@ import requests
 from RTN import parse
 
 from stream_fusion.services.postgresql.dao.torrentitem_dao import TorrentItemDAO
-from stream_fusion.utils.jackett.jackett_result import JackettResult
+# LIGNE SUPPRIMÉE : from stream_fusion.utils.jackett.jackett_result import JackettResult
 from stream_fusion.utils.sharewood.sharewood_result import SharewoodResult
 from stream_fusion.utils.zilean.zilean_result import ZileanResult
 from stream_fusion.utils.yggfilx.yggflix_result import YggflixResult
@@ -46,7 +46,8 @@ class TorrentService:
         unique_id = self.__generate_unique_id(torrent_item.raw_title, torrent_item.indexer)
         await self.torrent_dao.create_torrent_item(torrent_item, unique_id)
 
-    async def convert_and_process(self, results: List[JackettResult | ZileanResult | YggflixResult | SharewoodResult]):
+    # MODIFICATION ICI : Suppression de JackettResult dans le type hint
+    async def convert_and_process(self, results: List[ZileanResult | YggflixResult | SharewoodResult]):
         torrent_items_result = []
 
         for result in results:
@@ -118,7 +119,7 @@ class TorrentService:
     def __process_web_url(self, result: TorrentItem):
         try:
             time.sleep(0.2)
-            response = self.__session.get(result.link, allow_redirects=False, timeout=40) # flaresolverr and Jackett timeouts
+            response = self.__session.get(result.link, allow_redirects=False, timeout=40) # flaresolverr timeouts
         except requests.exceptions.RequestException:
             self.logger.error(f"Error while processing url: {result.link}")
             return result
